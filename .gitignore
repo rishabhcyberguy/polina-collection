@@ -1,0 +1,22 @@
+# Dependencies
+node_modules/
+.pnpm-store/
+
+# Production build artifacts
+dist/
+build/
+coverage/
+
+# Environment files
+.env*
+!.env.example
+
+# Temporary and AI Studio internal files
+.aistudio/
+.DS_Store
+*.log
+*.tmp
+
+# IDEs
+.vscode/
+.idea/

@@ -1,0 +1,92 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    // 1. Global Default-Deny Safety Net
+    match /{document=**} {
+      allow read, write: if false;
+    }
+
+    // Primitive Helpers
+    function incoming() {
+      return request.resource.data;
+    }
+
+    function existing() {
+      return resource.data;
+    }
+
+    function isSignedIn() {
+      return request.auth != null;
+    }
+
+    function isValidId(id) {
+      return id is string && id.size() > 0 && id.size() <= 128 && id.matches('^[a-zA-Z0-9_\\-]+$');
+    }
+
+    // Admin authorization check: checks trusted admin collection or verified admin token
+    function isAdmin() {
+      return isSignedIn() && (
+        exists(/databases/$(database)/documents/admins/$(request.auth.uid)) ||
+        (request.auth.token.email == "rishabhkp162012@gmail.com" && request.auth.token.email_verified == true)
+      );
+    }
+
+    // Entity Validation Helpers
+    function isValidProduct(data) {
+      return data.id is string && data.id.size() <= 128 &&
+             data.name is string && data.name.size() > 0 && data.name.size() <= 160 &&
+             data.slug is string && data.slug.size() > 0 && data.slug.size() <= 160 &&
+             data.status in ['published', 'draft', 'archived'];
+    }
+
+    function isValidCategory(data) {
+      return data.id is string && data.id.size() <= 128 &&
+             data.name is string && data.name.size() > 0 && data.name.size() <= 120 &&
+             data.slug is string && data.slug.size() > 0 && data.slug.size() <= 120;
+    }
+
+    function isValidSiteContent(data) {
+      return data.heroHeading is string && data.heroHeading.size() <= 160 &&
+             data.editorialHeading is string && data.editorialHeading.size() <= 200;
+    }
+
+    function isValidAdmin(data) {
+      return data.email is string && data.email.size() <= 254 &&
+             data.role == 'admin';
+    }
+
+    // Public catalog products (Public read, Admin-only write)
+    match /products/{productId} {
+      allow get, list: if true;
+      allow create: if isAdmin() && isValidId(productId) && isValidProduct(incoming());
+      allow update: if isAdmin() && isValidId(productId) && isValidProduct(incoming());
+      allow delete: if isAdmin() && isValidId(productId);
+    }
+
+    // Public collection categories (Public read, Admin-only write)
+    match /categories/{categoryId} {
+      allow get, list: if true;
+      allow create: if isAdmin() && isValidId(categoryId) && isValidCategory(incoming());
+      allow update: if isAdmin() && isValidId(categoryId) && isValidCategory(incoming());
+      allow delete: if isAdmin() && isValidId(categoryId);
+    }
+
+    // Editorial homepage & brand content (Public read, Admin-only write)
+    match /site_content/{contentId} {
+      allow get: if true;
+      allow list: if false;
+      allow create: if isAdmin() && isValidId(contentId) && isValidSiteContent(incoming());
+      allow update: if isAdmin() && isValidId(contentId) && isValidSiteContent(incoming());
+      allow delete: if isAdmin() && isValidId(contentId);
+    }
+
+    // Administrator profiles (Admin-only read and write)
+    match /admins/{adminUid} {
+      allow get: if isSignedIn() && (request.auth.uid == adminUid || isAdmin()) && isValidId(adminUid);
+      allow list: if isAdmin();
+      allow create: if isAdmin() && isValidId(adminUid) && isValidAdmin(incoming());
+      allow update: if isAdmin() && isValidId(adminUid) && isValidAdmin(incoming());
+      allow delete: if isAdmin() && isValidId(adminUid);
+    }
+  }
+}

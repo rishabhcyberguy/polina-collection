@@ -1,0 +1,90 @@
+{
+  "entities": {
+    "Product": {
+      "title": "Product",
+      "description": "POLINA catalog piece",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string", "maxLength": 128 },
+        "name": { "type": "string", "maxLength": 160 },
+        "slug": { "type": "string", "maxLength": 160, "pattern": "^[a-z0-9_-]+$" },
+        "description": { "type": "string", "maxLength": 2000 },
+        "categoryId": { "type": "string", "maxLength": 128 },
+        "categoryName": { "type": "string", "maxLength": 120 },
+        "featured": { "type": "boolean" },
+        "informationalOnly": { "type": "boolean" },
+        "status": { "type": "string", "enum": ["published", "draft", "archived"] },
+        "publishedSlug": { "type": "string", "maxLength": 160 },
+        "amazonUrl": { "type": "string", "maxLength": 500 },
+        "flipkartUrl": { "type": "string", "maxLength": 500 },
+        "images": { "type": "string", "maxLength": 4000 },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["id", "name", "slug", "status"]
+    },
+    "Category": {
+      "title": "Category",
+      "description": "POLINA collection category",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string", "maxLength": 128 },
+        "name": { "type": "string", "maxLength": 120 },
+        "slug": { "type": "string", "maxLength": 120, "pattern": "^[a-z0-9_-]+$" },
+        "sortOrder": { "type": "number" },
+        "active": { "type": "boolean" },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["id", "name", "slug"]
+    },
+    "SiteContent": {
+      "title": "SiteContent",
+      "description": "POLINA editorial homepage and brand metadata",
+      "type": "object",
+      "properties": {
+        "heroHeading": { "type": "string", "maxLength": 160 },
+        "heroDescription": { "type": "string", "maxLength": 1000 },
+        "heroCtaLabel": { "type": "string", "maxLength": 80 },
+        "heroCtaTarget": { "type": "string", "maxLength": 300 },
+        "editorialHeading": { "type": "string", "maxLength": 200 },
+        "editorialBody": { "type": "string", "maxLength": 4000 },
+        "footerNote": { "type": "string", "maxLength": 400 },
+        "contactLinks": { "type": "string", "maxLength": 2000 },
+        "featuredProductIds": { "type": "string", "maxLength": 1000 },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["heroHeading", "editorialHeading"]
+    },
+    "Admin": {
+      "title": "Admin",
+      "description": "Trusted administrative user profile",
+      "type": "object",
+      "properties": {
+        "email": { "type": "string", "format": "email", "maxLength": 254 },
+        "role": { "type": "string", "enum": ["admin"] },
+        "active": { "type": "boolean" },
+        "createdAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["email", "role"]
+    }
+  },
+  "firestore": {
+    "/products/{productId}": {
+      "schema": "Product",
+      "description": "Public catalog products (read-only for guests, write for verified admin)"
+    },
+    "/categories/{categoryId}": {
+      "schema": "Category",
+      "description": "Product categories (read-only for guests, write for verified admin)"
+    },
+    "/site_content/{contentId}": {
+      "schema": "SiteContent",
+      "description": "Editorial homepage content"
+    },
+    "/admins/{adminUid}": {
+      "schema": "Admin",
+      "description": "Privileged administrator profiles strictly protected by RBAC"
+    }
+  }
+}

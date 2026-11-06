@@ -1,11 +1,13 @@
-<div align="center">
+# Polina Collection
 
-<img width="1200" height="475" alt="GHBanner" src="https://github.com/user-attachments/assets/0aa67016-6eaf-458a-adb2-6e31a0763ed6" />
+Polina is a luxury, expressive nightwear and contemporary clothing brand application featuring editorial design, immersive collections, interactive product showcases, high-end lookbooks, and smooth user experiences.
 
-  <h1>Built with AI Studio</h2>
+## Features
+- **Editorial Brand Collections**: Explore curated seasonal drops and luxury nightwear lines.
+- **Interactive Product Showcase**: Detailed product views, size selectors, fabric details, and high-resolution imagery.
+- **Admin Dashboard**: Comprehensive management interface for products, orders, and content.
+- **Responsive & Motion-Driven UI**: Built with React, Tailwind CSS, and Framer Motion.
 
-  <p>The fastest path from prompt to production with Gemini.</p>
-
-  <a href="https://aistudio.google.com/apps">Start building</a>
-
-</div>
+## Development
+- Run `npm run dev` to start the development server.
+- Run `npm run build` to build for production.
