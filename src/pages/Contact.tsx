@@ -1,5 +1,5 @@
 import { useState, type FormEvent } from "react";
-import { ArrowUpRight, Send, CheckCircle2, Shield } from "lucide-react";
+import { ArrowUpRight, Send, CheckCircle2, Shield, Mail, Phone, ShoppingBag, Instagram, ExternalLink } from "lucide-react";
 import { Link } from "wouter";
 import DOMPurify from "dompurify";
 import { ContactBlock, SiteFooter, SiteHeader, usePageMeta } from "@/components/PolinaLayout";
@@ -46,7 +46,7 @@ export default function ContactPage() {
       <main className="contact-page">
         <div className="contact-page__eyebrow" data-reveal="rise">
           <span className="mono-label">POLINA / CONTACT &amp; BESPOKE INQUIRIES</span>
-          <span className="mono-label">CHANNELS ARE BRAND-MANAGED</span>
+          <span className="mono-label">OFFICIAL BRAND CHANNELS</span>
         </div>
 
         <h1 data-reveal="rise" data-reveal-delay="2">
@@ -54,14 +54,173 @@ export default function ContactPage() {
         </h1>
 
         <p className="contact-page__intro" data-reveal="rise" data-reveal-delay="3">
-          {content.footerNote}
+          Direct channels for inquiries, catalog orders, retail partnerships, and editorial previews.
         </p>
+
+        {/* Direct Brand Contact Channels Cards */}
+        <section
+          style={{
+            display: "grid",
+            gridTemplateColumns: "repeat(auto-fit, minmax(280px, 1fr))",
+            gap: "16px",
+            margin: "32px 0 48px",
+            maxWidth: "960px",
+          }}
+          data-reveal="rise"
+        >
+          {/* Email Card */}
+          <a
+            href="mailto:skfasionmart@gmail.com"
+            style={{
+              padding: "24px",
+              background: "#ffffff",
+              border: "1px solid var(--line)",
+              display: "flex",
+              flexDirection: "column",
+              gap: "8px",
+              textDecoration: "none",
+              color: "inherit",
+              transition: "border-color 0.2s ease, transform 0.2s ease",
+            }}
+          >
+            <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
+              <div style={{ display: "inline-flex", alignItems: "center", gap: "8px", color: "var(--red)" }}>
+                <Mail size={16} />
+                <span className="mono-label" style={{ fontSize: "10px", color: "var(--red)" }}>OFFICIAL EMAIL</span>
+              </div>
+              <ArrowUpRight size={14} style={{ opacity: 0.5 }} />
+            </div>
+            <strong style={{ fontSize: "16px", fontFamily: "DM Mono, monospace", color: "var(--ink)", wordBreak: "break-all" }}>
+              skfasionmart@gmail.com
+            </strong>
+            <span style={{ fontSize: "12px", color: "#666" }}>Inquiries, wholesale orders, and editorial press</span>
+          </a>
+
+          {/* Phone Card */}
+          <a
+            href="tel:+919560849553"
+            style={{
+              padding: "24px",
+              background: "#ffffff",
+              border: "1px solid var(--line)",
+              display: "flex",
+              flexDirection: "column",
+              gap: "8px",
+              textDecoration: "none",
+              color: "inherit",
+              transition: "border-color 0.2s ease, transform 0.2s ease",
+            }}
+          >
+            <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
+              <div style={{ display: "inline-flex", alignItems: "center", gap: "8px", color: "var(--red)" }}>
+                <Phone size={16} />
+                <span className="mono-label" style={{ fontSize: "10px", color: "var(--red)" }}>DIRECT TELEPHONE</span>
+              </div>
+              <ArrowUpRight size={14} style={{ opacity: 0.5 }} />
+            </div>
+            <strong style={{ fontSize: "16px", fontFamily: "DM Mono, monospace", color: "var(--ink)" }}>
+              +91 9560849553
+            </strong>
+            <span style={{ fontSize: "12px", color: "#666" }}>Direct concierge &amp; order inquiries (Mon–Sat)</span>
+          </a>
+
+          {/* Amazon Card */}
+          <a
+            href="https://www.amazon.in/storefront?me=A12LTZ308EZ348&ref_=ssf_share"
+            target="_blank"
+            rel="noopener noreferrer"
+            style={{
+              padding: "24px",
+              background: "#ffffff",
+              border: "1px solid var(--line)",
+              display: "flex",
+              flexDirection: "column",
+              gap: "8px",
+              textDecoration: "none",
+              color: "inherit",
+              transition: "border-color 0.2s ease, transform 0.2s ease",
+            }}
+          >
+            <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
+              <div style={{ display: "inline-flex", alignItems: "center", gap: "8px", color: "#e67a00" }}>
+                <ShoppingBag size={16} />
+                <span className="mono-label" style={{ fontSize: "10px", color: "#e67a00" }}>AMAZON STORE</span>
+              </div>
+              <ExternalLink size={14} style={{ opacity: 0.5 }} />
+            </div>
+            <strong style={{ fontSize: "16px", textTransform: "uppercase", letterSpacing: "0.04em", color: "var(--ink)" }}>
+              Amazon Official Storefront
+            </strong>
+            <span style={{ fontSize: "12px", color: "#666" }}>Prime delivery &amp; verified marketplace checkout</span>
+          </a>
+
+          {/* Flipkart Card */}
+          <a
+            href="https://www.flipkart.com/search?q=polina+women+nighty&as=on&as-show=on&otracker=AS_Query_OrganicAutoSuggest_1_13_na_na_na&otracker1=AS_Query_OrganicAutoSuggest_1_13_na_na_na&as-pos=1&as-type=RECENT&suggestionId=polina+women+nighty&requestId=0c69e4f3-be2a-4be8-80b6-46eac4b951ce&as-searchtext=polina%20womens"
+            target="_blank"
+            rel="noopener noreferrer"
+            style={{
+              padding: "24px",
+              background: "#ffffff",
+              border: "1px solid var(--line)",
+              display: "flex",
+              flexDirection: "column",
+              gap: "8px",
+              textDecoration: "none",
+              color: "inherit",
+              transition: "border-color 0.2s ease, transform 0.2s ease",
+            }}
+          >
+            <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
+              <div style={{ display: "inline-flex", alignItems: "center", gap: "8px", color: "#2874f0" }}>
+                <ShoppingBag size={16} />
+                <span className="mono-label" style={{ fontSize: "10px", color: "#2874f0" }}>FLIPKART STORE</span>
+              </div>
+              <ExternalLink size={14} style={{ opacity: 0.5 }} />
+            </div>
+            <strong style={{ fontSize: "16px", textTransform: "uppercase", letterSpacing: "0.04em", color: "var(--ink)" }}>
+              Flipkart Nightwear Collection
+            </strong>
+            <span style={{ fontSize: "12px", color: "#666" }}>Explore certified catalog drops across India</span>
+          </a>
+
+          {/* Instagram Card */}
+          <a
+            href="https://www.instagram.com/polina_fashion7/"
+            target="_blank"
+            rel="noopener noreferrer"
+            style={{
+              padding: "24px",
+              background: "#ffffff",
+              border: "1px solid var(--line)",
+              display: "flex",
+              flexDirection: "column",
+              gap: "8px",
+              textDecoration: "none",
+              color: "inherit",
+              gridColumn: "1 / -1",
+              transition: "border-color 0.2s ease, transform 0.2s ease",
+            }}
+          >
+            <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
+              <div style={{ display: "inline-flex", alignItems: "center", gap: "8px", color: "#E1306C" }}>
+                <Instagram size={16} />
+                <span className="mono-label" style={{ fontSize: "10px", color: "#E1306C" }}>OFFICIAL INSTAGRAM</span>
+              </div>
+              <ExternalLink size={14} style={{ opacity: 0.5 }} />
+            </div>
+            <strong style={{ fontSize: "16px", fontFamily: "DM Mono, monospace", color: "var(--ink)" }}>
+              @polina_fashion7
+            </strong>
+            <span style={{ fontSize: "12px", color: "#666" }}>Visual lookbooks, campaign previews, and collection releases</span>
+          </a>
+        </section>
 
         {/* Sanitized Direct Message Portal */}
         <section
           style={{
             maxWidth: "680px",
-            margin: "40px 0 60px",
+            margin: "0 0 60px",
             padding: "36px",
             background: "var(--paper)",
             border: "1px solid var(--line)",

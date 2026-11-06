@@ -10,26 +10,29 @@ import {
   FaGithub,
   FaInstagram,
   FaLinkedin,
+  FaPhone,
+  FaShoppingBag,
   FaTwitter,
 } from "react-icons/fa";
 
 export type ContactLink = {
   label: string;
   href: string;
-  icon: "email" | "amazon" | "flipkart" | "instagram" | "facebook" | "linkedin" | "twitter" | "github" | "discord" | "other";
+  icon: "email" | "amazon" | "flipkart" | "instagram" | "facebook" | "linkedin" | "twitter" | "github" | "discord" | "phone" | "other";
 };
 
 const contactLetters = "CONTACT";
 const icons = {
   email: FaEnvelope,
   amazon: FaAmazon,
-  flipkart: Link2,
+  flipkart: FaShoppingBag,
   instagram: FaInstagram,
   facebook: FaFacebook,
   linkedin: FaLinkedin,
   twitter: FaTwitter,
   github: FaGithub,
   discord: FaDiscord,
+  phone: FaPhone,
   other: Link2,
 };
 
