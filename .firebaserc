@@ -1,0 +1,14 @@
+{
+  "projects": {
+    "default": "gen-lang-client-0869167800"
+  },
+  "targets": {
+    "gen-lang-client-0869167800": {
+      "hosting": {
+        "shoppolina": [
+          "shoppolina"
+        ]
+      }
+    }
+  }
+}
