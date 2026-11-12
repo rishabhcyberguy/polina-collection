@@ -2,7 +2,7 @@ import { lazy, Suspense } from "react";
 import { Toaster } from "@/components/ui/sonner";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { Route, Switch } from "wouter";
-import Tiles from "@/components/TilesLoader";
+import TilesLoader from "@/components/TilesLoader";
 import ErrorBoundary from "./components/ErrorBoundary";
 import { AdminGuard } from "./components/AdminLayout";
 import { ThemeProvider } from "./contexts/ThemeContext";
@@ -57,7 +57,7 @@ export default function App() {
       <ThemeProvider defaultTheme="light">
         <TooltipProvider>
           <Toaster />
-          <Tiles />
+          <TilesLoader />
           <Router />
         </TooltipProvider>
       </ThemeProvider>
