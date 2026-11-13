@@ -29,6 +29,7 @@ pnpm-lock.yaml
 # IDE files
 .vscode/
 .idea/
+#do not know how to commit
 
 # OS files
 .DS_Store
