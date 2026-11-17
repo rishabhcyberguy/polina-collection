@@ -2,12 +2,12 @@ import tailwindcss from '@tailwindcss/vite';
 import react from '@vitejs/plugin-react';
 import path from 'path';
 import { defineConfig, type Plugin } from 'vite';
-import app from './server/_core/app';
 
 function expressPlugin(): Plugin {
   return {
     name: 'express-trpc-backend',
-    configureServer(server) {
+    async configureServer(server) {
+      const { default: app } = await import('./server/_core/app');
       server.middlewares.use((req, res, next) => {
         if (req.url && req.url.startsWith('/api')) {
           return (app as any)(req, res, next);
@@ -23,10 +23,14 @@ export default defineConfig(() => {
     plugins: [expressPlugin(), react(), tailwindcss()],
     resolve: {
       alias: {
-        '@': path.resolve(__dirname, './src'),
-        '@shared': path.resolve(__dirname, './shared'),
-        '@server': path.resolve(__dirname, './server'),
+        '@': path.resolve(import.meta.dirname, './src'),
+        '@shared': path.resolve(import.meta.dirname, './shared'),
+        '@server': path.resolve(import.meta.dirname, './server'),
       },
+    },
+    build: {
+      outDir: 'dist/public',
+      emptyOutDir: true,
     },
     server: {
       // HMR is disabled in AI Studio via DISABLE_HMR env var.

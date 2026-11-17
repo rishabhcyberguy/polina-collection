@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from "react";
-import { ArrowDownRight, ArrowLeft, ArrowRight, ArrowUpRight, Menu, X } from "lucide-react";
+import { ArrowDownRight, ArrowUpRight, Menu, X } from "lucide-react";
 import { Link } from "wouter";
-import type { PublishedProductSnapshot } from "../../drizzle/schema";
+import type { PublishedProductSnapshot } from "@shared/polina-types";
 import { normalizeSeoDescription, normalizeSeoTitle } from "@shared/seo";
 import { normalizeContactHref } from "@shared/contact-link";
 import SocialFlipButton, { type ContactLink } from "./SocialFlipButton";
@@ -193,18 +193,12 @@ export function ProductCard({ product, index = 0 }: { product: PublicProduct; in
 }
 
 export function ProductRail({ products }: { products: PublicProduct[] }) {
-  const railRef = useRef<HTMLDivElement>(null);
-  const move = (direction: number) => railRef.current?.scrollBy({ left: direction * Math.max(280, railRef.current.clientWidth * 0.76), behavior: "smooth" });
   if (!products.length) {
     return <div className="empty-products" data-reveal="rise"><span className="mono-label">COLLECTION / IN PROGRESS</span><p>The first POLINA Products will appear here when products are published.</p></div>;
   }
   return (
     <div className="rail-wrap" data-reveal="rise">
-      <div className="rail-controls">
-        <button type="button" onClick={() => move(-1)} aria-label="Scroll products left"><ArrowLeft size={18} /></button>
-        <button type="button" onClick={() => move(1)} aria-label="Scroll products right"><ArrowRight size={18} /></button>
-      </div>
-      <div className="product-rail" ref={railRef} aria-label="Featured POLINA products">
+      <div className="product-rail" tabIndex={0} role="region" aria-label="Featured POLINA products">
         {products.map((product, index) => <ProductCard key={product.id} product={product} index={index} />)}
       </div>
     </div>

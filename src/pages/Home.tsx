@@ -93,7 +93,7 @@ export default function Home() {
         <section id="featured" className="section section-featured" data-reveal="rise">
           <div className="section-heading">
             <div><span className="mono-label">01 / THE EDIT</span><h2>Selected<br /><em>PRODUCTS</em></h2></div>
-            <p className="section-intro">Published pieces from the POLINA collection.</p>
+            <p className="section-intro">.</p>
             <Link className="text-link" href="/collections">Shop all <ArrowUpRight size={15} /></Link>
           </div>
           {homeError ? <p className="inline-error" role="status">The catalog is temporarily unavailable. Please refresh in a moment.</p> : null}

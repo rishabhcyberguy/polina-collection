@@ -17,6 +17,10 @@ function getForgeConfig() {
   return { forgeUrl: forgeUrl.replace(/\/+$/, ""), forgeKey };
 }
 
+export function isStorageConfigured() {
+  return Boolean(ENV.forgeApiUrl.trim() && ENV.forgeApiKey.trim());
+}
+
 function normalizeKey(relKey: string): string {
   return relKey.replace(/^\/+/, "");
 }

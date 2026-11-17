@@ -1,73 +1,95 @@
 import { useEffect, useState, type FormEvent } from "react";
 import { ArrowLeft, LockKeyhole } from "lucide-react";
-import { Link, useLocation } from "wouter";
+import { Link, useLocation, useSearch } from "wouter";
 import { usePageMeta } from "@/components/PolinaLayout";
 import { trpc } from "@/lib/trpc";
-import { auth as firebaseAuth, googleProvider, signInWithPopup } from "@/lib/firebase";
+import {
+  auth as firebaseAuth,
+  googleProvider,
+  onAuthStateChanged,
+  sendEmailVerification,
+  signInWithEmailAndPassword,
+  signInWithPopup,
+  signOut,
+} from "@/lib/firebase";
 
 export function AdminLoginPage() {
   const [, setLocation] = useLocation();
+  const search = useSearch();
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [googleLoading, setGoogleLoading] = useState(false);
-  const [googleError, setGoogleError] = useState<string | null>(null);
+  const [passwordLoading, setPasswordLoading] = useState(false);
+  const [authError, setAuthError] = useState<string | null>(null);
+  const [firebaseReady, setFirebaseReady] = useState(false);
   const utils = trpc.useUtils();
-  const auth = trpc.auth.me.useQuery(undefined, { retry: false });
+  const auth = trpc.auth.me.useQuery(undefined, { enabled: firebaseReady, retry: false });
+  const firebaseLogin = trpc.auth.firebaseSignIn.useMutation();
+  const resetCompleted = new URLSearchParams(search).get("reset") === "success";
 
-  // If already logged in, redirect to admin panel
+  useEffect(() => onAuthStateChanged(firebaseAuth, () => setFirebaseReady(true)), []);
   useEffect(() => {
-    if (auth.data) {
-      setLocation("/admin");
-    }
+    if (auth.data) setLocation("/admin");
   }, [auth.data, setLocation]);
-
-  const onLoginSuccess = async (data: { id: number; name: string | null; email: string; role: "admin"; token?: string; csrf?: string }) => {
-    if (data?.token) {
-      try {
-        localStorage.setItem("polina_admin_token", data.token);
-      } catch {}
-    }
-    if (data?.csrf) {
-      try {
-        localStorage.setItem("polina_csrf_token", data.csrf);
-      } catch {}
-    }
-    utils.auth.me.setData(undefined, { id: data.id, name: data.name, email: data.email, role: data.role });
-    await utils.auth.me.invalidate();
-    setLocation("/admin");
-  };
-
-  const login = trpc.auth.signIn.useMutation({
-    onSuccess: onLoginSuccess,
-  });
-
-  const firebaseLogin = trpc.auth.firebaseSignIn.useMutation({
-    onSuccess: onLoginSuccess,
-  });
 
   usePageMeta("Admin sign in — POLINA", "Sign in to manage POLINA content.", true);
 
-  const submit = (event: FormEvent) => {
+  const finishAdminSignIn = async () => {
+    try {
+      const result = await firebaseLogin.mutateAsync();
+      utils.auth.me.setData(undefined, result);
+      await utils.auth.me.invalidate();
+      setLocation("/admin");
+    } catch (error) {
+      await signOut(firebaseAuth).catch(() => undefined);
+      const message = error instanceof Error ? error.message : "This Firebase account is not authorized for POLINA administration.";
+      setAuthError(message);
+    }
+  };
+
+  const submit = async (event: FormEvent) => {
     event.preventDefault();
-    login.mutate({ email, password });
+    setAuthError(null);
+    setPasswordLoading(true);
+    try {
+      const credential = await signInWithEmailAndPassword(firebaseAuth, email.trim(), password);
+      if (!credential.user.emailVerified) {
+        await sendEmailVerification(credential.user);
+        await signOut(firebaseAuth);
+        setAuthError("Verify your email using the message we sent before signing in.");
+        return;
+      }
+      await finishAdminSignIn();
+    } catch (error) {
+      await signOut(firebaseAuth).catch(() => undefined);
+      const code = (error as { code?: string }).code;
+      setAuthError(code?.startsWith("auth/") ? "Email or password was not accepted." : error instanceof Error ? error.message : "Sign-in could not be completed.");
+    } finally {
+      setPasswordLoading(false);
+    }
   };
 
   const handleGoogleSignIn = async () => {
+    setAuthError(null);
+    setGoogleLoading(true);
     try {
-      setGoogleLoading(true);
-      setGoogleError(null);
       const result = await signInWithPopup(firebaseAuth, googleProvider);
-      if (result.user?.email) {
-        await firebaseLogin.mutateAsync({ email: result.user.email });
+      if (!result.user.emailVerified) {
+        await sendEmailVerification(result.user);
+        await signOut(firebaseAuth);
+        setAuthError("Verify your email using the message we sent before signing in.");
+        return;
       }
-    } catch (err) {
-      setGoogleError(err instanceof Error ? err.message : "Google sign in could not be completed.");
+      await finishAdminSignIn();
+    } catch (error) {
+      await signOut(firebaseAuth).catch(() => undefined);
+      setAuthError(error instanceof Error ? error.message : "Google sign in could not be completed.");
     } finally {
       setGoogleLoading(false);
     }
   };
 
-  const isPending = login.isPending || firebaseLogin.isPending || googleLoading;
+  const isPending = passwordLoading || googleLoading || firebaseLogin.isPending;
 
   return (
     <main className="auth-screen">
@@ -76,8 +98,8 @@ export function AdminLoginPage() {
         <span className="mono-label">POLINA / PRIVATE ACCESS</span>
         <h1><LockKeyhole size={25} aria-hidden="true" /> Admin sign in</h1>
         <p>Private administrator portal for POLINA management. Public registration is permanently disabled.</p>
+        {resetCompleted ? <p className="reset-confirmation" role="status">Your password reset is complete. Sign in with your updated password.</p> : null}
 
-        {/* Google / Firebase Authentication Button */}
         <button
           type="button"
           onClick={handleGoogleSignIn}
@@ -120,9 +142,7 @@ export function AdminLoginPage() {
         <form onSubmit={submit} className="admin-form">
           <label>Email address<input type="email" name="email" autoComplete="username" required value={email} onChange={(event) => setEmail(event.target.value)} placeholder="admin@polina.com" /></label>
           <label>Password<input type="password" name="password" autoComplete="current-password" required minLength={1} maxLength={128} value={password} onChange={(event) => setPassword(event.target.value)} /></label>
-          {login.error ? <p className="form-error" role="alert">{login.error.message}</p> : null}
-          {firebaseLogin.error ? <p className="form-error" role="alert">{firebaseLogin.error.message}</p> : null}
-          {googleError ? <p className="form-error" role="alert">{googleError}</p> : null}
+          {authError ? <p className="form-error" role="alert">{authError}</p> : null}
           <button className="button-red button-red--wide" type="submit" disabled={isPending}>{isPending ? "Authenticating…" : "Sign in"}</button>
         </form>
         <Link className="auth-secondary-link" href="/admin/reset">Forgot password?</Link>

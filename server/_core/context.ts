@@ -1,13 +1,12 @@
 import type { CreateExpressContextOptions } from "@trpc/server/adapters/express";
-import type { User, AdminAccount } from "../../drizzle/schema";
-import { authenticateAdminRequest, type AdminSession } from "./polina-auth";
+import type { User, AdminAccount } from "../../shared/polina-types";
+import { authenticateAdminRequest } from "./polina-auth";
 
 export type TrpcContext = {
   req: CreateExpressContextOptions["req"];
   res: CreateExpressContextOptions["res"];
   user: User | null;
   admin: AdminAccount | null;
-  adminSession: AdminSession | null;
 };
 
 export async function createContext(opts: CreateExpressContextOptions): Promise<TrpcContext> {
@@ -18,10 +17,9 @@ export async function createContext(opts: CreateExpressContextOptions): Promise<
       res: opts.res,
       user: identity?.user ?? null,
       admin: identity?.admin ?? null,
-      adminSession: identity?.session ?? null,
     };
-  } catch (error) {
-    console.error("[Auth] Session lookup failed:", error instanceof Error ? error.message : "unknown error");
-    return { req: opts.req, res: opts.res, user: null, admin: null, adminSession: null };
+  } catch {
+    console.error("[Auth] Firebase identity lookup failed.");
+    return { req: opts.req, res: opts.res, user: null, admin: null };
   }
 }

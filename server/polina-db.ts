@@ -1,630 +1,518 @@
-import { and, asc, desc, eq, gt, isNull, ne } from "drizzle-orm";
-import {
-  adminAccounts,
-  adminSessions,
-  authRateLimits,
-  categories,
-  contentEdits,
-  passwordResetTokens,
-  productImages,
-  products,
-  sitePages,
-  type AdminAccount,
-  type PublishedProductSnapshot,
-  type SiteContent,
-} from "../drizzle/schema";
-import { getDb } from "./db";
-import { normalizeRetailerUrl } from "../shared/retailer";
+import type { DocumentData, DocumentReference, Firestore, QueryDocumentSnapshot, Transaction } from "@google-cloud/firestore";
+import type {
+  AdminAccount,
+  Category,
+  ContentEdit,
+  Product,
+  ProductImage,
+  ProductStatus,
+  PublishedProductSnapshot,
+  SiteContent,
+  SitePage,
+} from "../shared/polina-types";
+import { getFirestoreDb } from "./firebase-services";
 
-// Default admin password hash for "PolinaAdmin2026!"
-const DEFAULT_ADMIN_HASH = "scrypt$ZSYMuWF3z46V4NM55lfvlg$wUssT9f7mRShjwGQoZc7ng4_sBTw4tpZutipzXCEzxlp6p6b2QHjro-OL9NO252q4d7JRTL88YSa4MKtC66vAQ";
+const CATEGORIES = "categories";
+const PRODUCTS = "products";
+const SITE_PAGES = "site_pages";
+const PUBLIC_SITE_CONTENT = "site_content";
+const ADMINS = "admins";
+const COUNTERS = "counters";
+const SLUG_RESERVATIONS = "slug_reservations";
+const CONTENT_EDITS = "content_edits";
 
-// In-memory fallback data store for environments without a dedicated MySQL database
-interface MemoryAdmin {
-  id: number;
-  email: string;
-  name: string | null;
-  passwordHash: string;
-  active: boolean;
-  createdAt: Date;
-  updatedAt: Date;
-  lastSignedIn: Date | null;
+type Data = Record<string, unknown>;
+type ProductWithCategory = Product & { category: Category | null };
+type PublishedProduct = PublishedProductSnapshot & { id: number; publishedAt: Date | null };
+
+function record(value: unknown): Data {
+  return value && typeof value === "object" && !Array.isArray(value) ? value as Data : {};
 }
 
-interface MemorySession {
-  id: number;
-  adminId: number;
-  tokenHash: string;
-  csrfHash: string;
-  createdAt: Date;
-  expiresAt: Date;
-  revokedAt: Date | null;
-}
-
-interface MemoryCategory {
-  id: number;
-  name: string;
-  slug: string;
-  sortOrder: number;
-  active: boolean;
-  createdAt: Date;
-  updatedAt: Date;
-}
-
-interface MemoryProductImage {
-  id: number;
-  productId: number;
-  storageKey: string;
-  url: string;
-  altText: string;
-  sortOrder: number;
-}
-
-interface MemoryProduct {
-  id: number;
-  name: string;
-  slug: string;
-  description: string;
-  categoryId: number | null;
-  featured: boolean;
-  informationalOnly: boolean;
-  status: "draft" | "published" | "archived";
-  hasDraftChanges: boolean;
-  publishedSlug: string | null;
-  publishedData: PublishedProductSnapshot | null;
-  amazonUrl: string | null;
-  flipkartUrl: string | null;
-  createdAt: Date;
-  updatedAt: Date;
-  publishedAt: Date | null;
-  createdBy: number;
-  updatedBy: number;
-}
-
-const memoryAdmins: MemoryAdmin[] = [
-  {
-    id: 1,
-    email: "rishabhkp162012@gmail.com",
-    name: "Rishabh (POLINA Administrator)",
-    passwordHash: DEFAULT_ADMIN_HASH,
-    active: true,
-    createdAt: new Date(),
-    updatedAt: new Date(),
-    lastSignedIn: null,
-  },
-];
-
-const memorySessions: MemorySession[] = [];
-const memoryRateLimits = new Map<string, { attempts: number; windowStartedAt: Date; blockedUntil: Date | null }>();
-const memoryResetTokens: Array<{ id: number; adminId: number; tokenHash: string; createdAt: Date; expiresAt: Date; usedAt: Date | null }> = [];
-const memoryEdits: Array<{ id: number; entityType: string; entityId: string; entityLabel: string; action: string; editorEmail: string; createdAt: Date }> = [];
-
-const memoryCategories: MemoryCategory[] = [
-  { id: 1, name: "Co-Ord Set", slug: "co-ord-set", sortOrder: 1, active: true, createdAt: new Date(), updatedAt: new Date() },
-  { id: 2, name: "Nightwear", slug: "nightwear", sortOrder: 2, active: true, createdAt: new Date(), updatedAt: new Date() },
-  { id: 3, name: "Robes & Lounge", slug: "robes-lounge", sortOrder: 3, active: true, createdAt: new Date(), updatedAt: new Date() },
-];
-
-const memoryProductImages: MemoryProductImage[] = [
-  {
-    id: 1,
-    productId: 1,
-    storageKey: "hero-showcase",
-    url: "/assets/aistudio/DSC00916_copy_c03a84f5.jpg",
-    altText: "POLINA Dark Velour Set — Front Silhouette",
-    sortOrder: 1,
-  },
-  {
-    id: 2,
-    productId: 1,
-    storageKey: "detail-showcase",
-    url: "/assets/aistudio/DSC00922_copy_12df23bb.jpg",
-    altText: "POLINA Dark Velour Set — Tactile Texture & Editorial Detail",
-    sortOrder: 2,
-  },
-];
-
-const memoryProducts: MemoryProduct[] = [
-  {
-    id: 1,
-    name: "Dark Velour Set",
-    slug: "dark-velour-set",
-    description: "Premium tactile velour tracksuit designed with contemporary editorial proportions. Features an architectural high-collar silhouette, deep obsidian velour finish, and tailored cuffs for uncompromising presence.",
-    categoryId: 1,
-    featured: true,
-    informationalOnly: true,
-    status: "published",
-    hasDraftChanges: false,
-    publishedSlug: "dark-velour-set",
-    amazonUrl: null,
-    flipkartUrl: null,
-    createdAt: new Date(),
-    updatedAt: new Date(),
-    publishedAt: new Date(),
-    createdBy: 1,
-    updatedBy: 1,
-    publishedData: {
-      name: "Dark Velour Set",
-      slug: "dark-velour-set",
-      description: "Premium tactile velour tracksuit designed with contemporary editorial proportions. Features an architectural high-collar silhouette, deep obsidian velour finish, and tailored cuffs for uncompromising presence.",
-      categoryId: 1,
-      categoryName: "Co-Ord Set",
-      categorySlug: "co-ord-set",
-      featured: true,
-      informationalOnly: true,
-      amazonUrl: null,
-      flipkartUrl: null,
-      images: [
-        {
-          url: "/assets/aistudio/DSC00916_copy_c03a84f5.jpg",
-          altText: "POLINA Dark Velour Set — Front Silhouette",
-        },
-        {
-          url: "/assets/aistudio/DSC00922_copy_12df23bb.jpg",
-          altText: "POLINA Dark Velour Set — Tactile Texture & Editorial Detail",
-        },
-      ],
-    },
-  },
-];
-
-const OFFICIAL_CONTACT_LINKS = [
-  { label: "Email Us", href: "mailto:skfasionmart@gmail.com", icon: "email" },
-  { label: "Call / WhatsApp", href: "tel:+919560849553", icon: "phone" },
-  { label: "Amazon Store", href: "https://www.amazon.in/storefront?me=A12LTZ308EZ348&ref_=ssf_share", icon: "amazon" },
-  { label: "Flipkart Store", href: "https://www.flipkart.com/search?q=polina+women+nighty&as=on&as-show=on&otracker=AS_Query_OrganicAutoSuggest_1_13_na_na_na&otracker1=AS_Query_OrganicAutoSuggest_1_13_na_na_na&as-pos=1&as-type=RECENT&suggestionId=polina+women+nighty&requestId=0c69e4f3-be2a-4be8-80b6-46eac4b951ce&as-searchtext=polina%20womens", icon: "flipkart" },
-  { label: "Instagram", href: "https://www.instagram.com/polina_fashion7/", icon: "instagram" },
-];
-
-const memoryPages: Array<{ id: number; pageKey: string; draftContent: SiteContent; publishedContent: SiteContent | null; status: "draft" | "published"; version: number; updatedAt: Date }> = [
-  {
-    id: 1,
-    pageKey: "home",
-    draftContent: {
-      heroHeading: "POLINA",
-      heroDescription: "Sensorial luxury and editorial nightwear silhouettes crafted for uncompromising presence.",
-      heroCtaLabel: "Explore the collection",
-      heroCtaTarget: "/collections",
-      editorialHeading: "Made for your own kind of night.",
-      editorialBody: "Tactile expression and modern silhouettes. POLINA curates nightwear and elevated loungewear with bold editorial distinction.",
-      footerNote: "POLINA STUDIOS · ALL RIGHTS RESERVED",
-      contactLinks: OFFICIAL_CONTACT_LINKS,
-      featuredProductIds: [1],
-    },
-    publishedContent: {
-      heroHeading: "POLINA",
-      heroDescription: "Sensorial luxury and editorial nightwear silhouettes crafted for uncompromising presence.",
-      heroCtaLabel: "Explore the collection",
-      heroCtaTarget: "/collections",
-      editorialHeading: "Made for your own kind of night.",
-      editorialBody: "Tactile expression and modern silhouettes. POLINA curates nightwear and elevated loungewear with bold editorial distinction.",
-      footerNote: "POLINA STUDIOS · ALL RIGHTS RESERVED",
-      contactLinks: OFFICIAL_CONTACT_LINKS,
-      featuredProductIds: [1],
-    },
-    status: "published",
-    version: 1,
-    updatedAt: new Date(),
-  },
-];
-
-export async function ensureDefaultAdmin() {
-  const db = await getDb();
-  if (db) {
-    try {
-      const rows = await db.select().from(adminAccounts).limit(1);
-      if (rows.length === 0) {
-        await db.insert(adminAccounts).values({
-          email: "rishabhkp162012@gmail.com",
-          name: "Rishabh (POLINA Administrator)",
-          passwordHash: DEFAULT_ADMIN_HASH,
-          active: true,
-        });
-      }
-    } catch {
-      // Ignored
-    }
+function parseJson(value: unknown): unknown {
+  if (typeof value !== "string") return value;
+  try {
+    return JSON.parse(value) as unknown;
+  } catch {
+    return undefined;
   }
 }
 
-export async function findAdminByEmail(email: string) {
-  const db = await getDb();
-  if (db) {
-    const [row] = await db.select().from(adminAccounts).where(eq(adminAccounts.email, email)).limit(1);
-    return row ?? null;
-  }
-  return memoryAdmins.find((a) => a.email.toLowerCase() === email.toLowerCase()) ?? null;
+function text(value: unknown, fallback = "") {
+  return typeof value === "string" ? value : fallback;
 }
 
-export async function findAdminById(id: number) {
-  const db = await getDb();
-  if (db) {
-    const [row] = await db.select().from(adminAccounts).where(eq(adminAccounts.id, id)).limit(1);
-    return row ?? null;
-  }
-  return memoryAdmins.find((a) => a.id === id) ?? null;
+function nullableText(value: unknown): string | null {
+  return typeof value === "string" && value.length ? value : null;
 }
 
-export async function createAdminAccount(input: { email: string; name: string | null; passwordHash: string }) {
-  const db = await getDb();
-  if (db) {
-    const result = await db.insert(adminAccounts).values({
-      email: input.email,
-      name: input.name,
-      passwordHash: input.passwordHash,
-      active: true,
-    });
-    return Number((result[0] as { insertId?: number }).insertId);
-  }
-  const id = memoryAdmins.length + 1;
-  memoryAdmins.push({
-    id,
-    email: input.email,
-    name: input.name,
-    passwordHash: input.passwordHash,
-    active: true,
-    createdAt: new Date(),
-    updatedAt: new Date(),
-    lastSignedIn: null,
-  });
-  return id;
+function numberValue(value: unknown, fallback = 0) {
+  if (typeof value === "number" && Number.isFinite(value)) return value;
+  if (typeof value === "string" && value.trim() && Number.isFinite(Number(value))) return Number(value);
+  return fallback;
 }
 
-export async function updateAdminLastSignedIn(id: number) {
-  const db = await getDb();
-  if (db) {
-    await db.update(adminAccounts).set({ lastSignedIn: new Date() }).where(eq(adminAccounts.id, id));
-    return;
-  }
-  const admin = memoryAdmins.find((a) => a.id === id);
-  if (admin) admin.lastSignedIn = new Date();
+function booleanValue(value: unknown, fallback = false) {
+  return typeof value === "boolean" ? value : fallback;
 }
 
-export async function createAdminSession(input: {
-  adminId: number;
-  tokenHash: string;
-  csrfHash: string;
-  expiresAt: Date;
-}) {
-  const db = await getDb();
-  if (db) {
-    await db.insert(adminSessions).values(input);
-    return;
+function dateValue(value: unknown, fallback = new Date()): Date {
+  if (value instanceof Date && !Number.isNaN(value.getTime())) return value;
+  if (value && typeof value === "object" && "toDate" in value && typeof value.toDate === "function") {
+    const result = value.toDate();
+    if (result instanceof Date && !Number.isNaN(result.getTime())) return result;
   }
-  memorySessions.push({
-    id: memorySessions.length + 1,
-    adminId: input.adminId,
-    tokenHash: input.tokenHash,
-    csrfHash: input.csrfHash,
-    createdAt: new Date(),
-    expiresAt: input.expiresAt,
-    revokedAt: null,
+  if (typeof value === "string" || typeof value === "number") {
+    const result = new Date(value);
+    if (!Number.isNaN(result.getTime())) return result;
+  }
+  return fallback;
+}
+
+function nullableDate(value: unknown): Date | null {
+  if (value === null || value === undefined || value === "") return null;
+  return dateValue(value, new Date(0));
+}
+
+function documentIdNumber(id: string, data: Data) {
+  return numberValue(data.id, numberValue(id, 0));
+}
+
+function parseImages(value: unknown): Array<{ url: string; altText: string }> {
+  const candidate = parseJson(value);
+  if (!Array.isArray(candidate)) return [];
+  return candidate.flatMap((item) => {
+    const image = record(item);
+    const url = text(image.url);
+    if (!url) return [];
+    return [{ url, altText: text(image.altText, text(image.alt, "Product image")) }];
   });
 }
 
-export async function findAdminForSession(tokenHash: string) {
-  const db = await getDb();
-  const now = new Date();
-  if (db) {
-    const [row] = await db
-      .select({
-        sessionId: adminSessions.id,
-        sessionTokenHash: adminSessions.tokenHash,
-        csrfHash: adminSessions.csrfHash,
-        expiresAt: adminSessions.expiresAt,
-        admin: adminAccounts,
-      })
-      .from(adminSessions)
-      .innerJoin(adminAccounts, eq(adminSessions.adminId, adminAccounts.id))
-      .where(and(
-        eq(adminSessions.tokenHash, tokenHash),
-        isNull(adminSessions.revokedAt),
-        gt(adminSessions.expiresAt, now),
-        eq(adminAccounts.active, true),
-      ))
-      .limit(1);
-    return row ?? null;
-  }
-  const sess = memorySessions.find((s) => s.tokenHash === tokenHash && !s.revokedAt && s.expiresAt > now);
-  if (!sess) return null;
-  const admin = memoryAdmins.find((a) => a.id === sess.adminId && a.active);
-  if (!admin) return null;
+function parseSnapshot(value: unknown): PublishedProductSnapshot | null {
+  const snapshot = record(parseJson(value));
+  const name = text(snapshot.name);
+  const slug = text(snapshot.slug);
+  if (!name || !slug) return null;
+  const images = parseImages(snapshot.images);
   return {
-    sessionId: sess.id,
-    sessionTokenHash: sess.tokenHash,
-    csrfHash: sess.csrfHash,
-    expiresAt: sess.expiresAt,
-    admin,
+    name,
+    slug,
+    description: text(snapshot.description),
+    categoryId: numberValue(snapshot.categoryId),
+    categoryName: text(snapshot.categoryName),
+    categorySlug: text(snapshot.categorySlug),
+    featured: booleanValue(snapshot.featured),
+    informationalOnly: booleanValue(snapshot.informationalOnly),
+    amazonUrl: nullableText(snapshot.amazonUrl),
+    flipkartUrl: nullableText(snapshot.flipkartUrl),
+    images,
   };
 }
 
-export async function revokeAdminSession(tokenHash: string) {
-  const db = await getDb();
-  if (db) {
-    await db.update(adminSessions).set({ revokedAt: new Date() })
-      .where(and(eq(adminSessions.tokenHash, tokenHash), isNull(adminSessions.revokedAt)));
-    return;
-  }
-  const sess = memorySessions.find((s) => s.tokenHash === tokenHash);
-  if (sess) sess.revokedAt = new Date();
+const CONTACT_ICONS = new Set([
+  "email", "amazon", "flipkart", "instagram", "facebook", "linkedin",
+  "twitter", "github", "discord", "phone", "other",
+]);
+
+function parseSiteContent(value: unknown): SiteContent | null {
+  const parsed = record(parseJson(value));
+  const heroHeading = text(parsed.heroHeading);
+  const heroDescription = text(parsed.heroDescription);
+  const heroCtaLabel = text(parsed.heroCtaLabel);
+  const heroCtaTarget = text(parsed.heroCtaTarget);
+  const editorialHeading = text(parsed.editorialHeading);
+  const editorialBody = text(parsed.editorialBody);
+  const footerNote = text(parsed.footerNote);
+  if (!heroHeading || !heroCtaLabel || !heroCtaTarget) return null;
+
+  const contactValues = parseJson(parsed.contactLinks);
+  const contactLinks = Array.isArray(contactValues)
+    ? contactValues.flatMap((item) => {
+        const link = record(item);
+        const label = text(link.label);
+        const href = text(link.href);
+        if (!label || !href) return [];
+        const icon = text(link.icon, "other");
+        return [{ label, href, icon: CONTACT_ICONS.has(icon) ? icon as SiteContent["contactLinks"][number]["icon"] : "other" as const }];
+      })
+    : [];
+  const featuredValues = parseJson(parsed.featuredProductIds);
+  const featuredProductIds = Array.isArray(featuredValues)
+    ? featuredValues.map((id) => numberValue(id, -1)).filter((id) => Number.isInteger(id) && id > 0)
+    : [];
+
+  return {
+    heroHeading,
+    heroDescription,
+    heroCtaLabel,
+    heroCtaTarget,
+    editorialHeading,
+    editorialBody,
+    footerNote,
+    contactLinks,
+    featuredProductIds,
+  };
 }
 
-export async function revokeAllAdminSessions(adminId: number) {
-  const db = await getDb();
-  if (db) {
-    await db.update(adminSessions).set({ revokedAt: new Date() })
-      .where(and(eq(adminSessions.adminId, adminId), isNull(adminSessions.revokedAt)));
-    return;
-  }
-  for (const sess of memorySessions) {
-    if (sess.adminId === adminId) sess.revokedAt = new Date();
-  }
-}
-
-export async function createPasswordResetToken(input: { adminId: number; tokenHash: string; expiresAt: Date }) {
-  const db = await getDb();
-  if (db) {
-    await db.insert(passwordResetTokens).values(input);
-    return;
-  }
-  memoryResetTokens.push({ id: memoryResetTokens.length + 1, ...input, createdAt: new Date(), usedAt: null });
-}
-
-export async function findPasswordResetToken(tokenHash: string) {
-  const db = await getDb();
+function mapCategory(snapshot: QueryDocumentSnapshot<DocumentData>): Category {
+  const data = snapshot.data() as Data;
   const now = new Date();
-  if (db) {
-    const [row] = await db.select().from(passwordResetTokens).where(and(
-      eq(passwordResetTokens.tokenHash, tokenHash),
-      isNull(passwordResetTokens.usedAt),
-      gt(passwordResetTokens.expiresAt, now),
-    )).limit(1);
-    return row ?? null;
-  }
-  return memoryResetTokens.find((t) => t.tokenHash === tokenHash && !t.usedAt && t.expiresAt > now) ?? null;
+  return {
+    id: documentIdNumber(snapshot.id, data),
+    name: text(data.name),
+    slug: text(data.slug),
+    sortOrder: numberValue(data.sortOrder),
+    active: booleanValue(data.active, true),
+    createdAt: dateValue(data.createdAt, now),
+    updatedAt: dateValue(data.updatedAt, now),
+  };
 }
 
-export async function consumePasswordReset(input: { tokenHash: string; adminId: number; passwordHash: string }) {
-  const db = await getDb();
-  const now = new Date();
-  if (db) {
-    await db.transaction(async (tx) => {
-      const [token] = await tx.select().from(passwordResetTokens).where(and(
-        eq(passwordResetTokens.tokenHash, input.tokenHash),
-        eq(passwordResetTokens.adminId, input.adminId),
-        isNull(passwordResetTokens.usedAt),
-        gt(passwordResetTokens.expiresAt, now),
-      )).limit(1);
-      if (!token) throw new Error("This password reset link is invalid or expired.");
-      await tx.update(passwordResetTokens).set({ usedAt: now }).where(eq(passwordResetTokens.id, token.id));
-      await tx.update(adminAccounts).set({ passwordHash: input.passwordHash, updatedAt: now })
-        .where(eq(adminAccounts.id, input.adminId));
-      await tx.update(adminSessions).set({ revokedAt: now })
-        .where(and(eq(adminSessions.adminId, input.adminId), isNull(adminSessions.revokedAt)));
-    });
-    return;
-  }
-  const token = memoryResetTokens.find((t) => t.tokenHash === input.tokenHash && t.adminId === input.adminId && !t.usedAt && t.expiresAt > now);
-  if (!token) throw new Error("This password reset link is invalid or expired.");
-  token.usedAt = now;
-  const admin = memoryAdmins.find((a) => a.id === input.adminId);
-  if (admin) {
-    admin.passwordHash = input.passwordHash;
-    admin.updatedAt = now;
-  }
-  for (const s of memorySessions) {
-    if (s.adminId === input.adminId) s.revokedAt = now;
-  }
+function mapImage(snapshot: QueryDocumentSnapshot<DocumentData>, productId: number): ProductImage {
+  const data = snapshot.data() as Data;
+  return {
+    id: documentIdNumber(snapshot.id, data),
+    productId: numberValue(data.productId, productId),
+    storageKey: text(data.storageKey),
+    url: text(data.url),
+    altText: text(data.altText),
+    sortOrder: numberValue(data.sortOrder),
+    createdAt: dateValue(data.createdAt),
+  };
 }
 
-export async function hitAuthRateLimit(input: {
-  bucketKey: string;
-  maxAttempts: number;
-  windowMs: number;
-  blockMs: number;
-}) {
-  const db = await getDb();
+function mapProductData(id: string, data: Data): Product {
+  const statusValue = text(data.status, "draft");
+  const status: ProductStatus = statusValue === "published" || statusValue === "archived" ? statusValue : "draft";
+  const snapshot = parseSnapshot(data.publishedData) ?? (status === "published" && text(data.name) && text(data.slug) ? {
+    name: text(data.name),
+    slug: text(data.slug),
+    description: text(data.description),
+    categoryId: numberValue(data.categoryId),
+    categoryName: text(data.categoryName),
+    categorySlug: text(data.categorySlug),
+    featured: booleanValue(data.featured),
+    informationalOnly: booleanValue(data.informationalOnly),
+    amazonUrl: nullableText(data.amazonUrl),
+    flipkartUrl: nullableText(data.flipkartUrl),
+    images: parseImages(data.images),
+  } satisfies PublishedProductSnapshot : null);
+  return {
+    id: documentIdNumber(id, data),
+    name: text(data.name),
+    slug: text(data.slug),
+    description: text(data.description),
+    categoryId: data.categoryId === null || data.categoryId === undefined ? null : numberValue(data.categoryId, 0),
+    featured: booleanValue(data.featured),
+    informationalOnly: booleanValue(data.informationalOnly),
+    status,
+    hasDraftChanges: booleanValue(data.hasDraftChanges),
+    publishedSlug: nullableText(data.publishedSlug) ?? (status === "published" ? text(data.slug) || null : null),
+    publishedData: snapshot,
+    amazonUrl: nullableText(data.amazonUrl),
+    flipkartUrl: nullableText(data.flipkartUrl),
+    createdAt: dateValue(data.createdAt),
+    updatedAt: dateValue(data.updatedAt),
+    createdBy: data.createdBy === null || data.createdBy === undefined ? null : numberValue(data.createdBy, 0),
+    updatedBy: data.updatedBy === null || data.updatedBy === undefined ? null : numberValue(data.updatedBy, 0),
+    publishedAt: nullableDate(data.publishedAt),
+    images: [],
+  };
+}
+
+function mapAdmin(snapshot: QueryDocumentSnapshot<DocumentData> | { id: string; data(): DocumentData }): AdminAccount | null {
+  const data = snapshot.data() as Data;
+  const email = text(data.email).trim().toLowerCase();
+  const id = documentIdNumber(snapshot.id, data);
+  if (!email || id <= 0 || data.role !== "admin" || data.active !== true) return null;
   const now = new Date();
-  if (db) {
-    const [row] = await db.select().from(authRateLimits).where(eq(authRateLimits.bucketKey, input.bucketKey)).limit(1);
-    if (!row) {
-      await db.insert(authRateLimits).values({ bucketKey: input.bucketKey, attempts: 1, windowStartedAt: now });
-      return { limited: false, retryAfterMs: 0 };
+  return {
+    id,
+    uid: text(data.uid, snapshot.id),
+    email,
+    name: nullableText(data.name ?? data.displayName),
+    role: "admin",
+    active: true,
+    createdAt: dateValue(data.createdAt, now),
+    updatedAt: dateValue(data.updatedAt, now),
+    lastSignedIn: nullableDate(data.lastSignedIn),
+  };
+}
+
+function mapContentEdit(snapshot: QueryDocumentSnapshot<DocumentData>): ContentEdit {
+  const data = snapshot.data() as Data;
+  return {
+    id: documentIdNumber(snapshot.id, data),
+    entityType: text(data.entityType),
+    entityId: text(data.entityId),
+    entityLabel: text(data.entityLabel),
+    action: text(data.action),
+    editorEmail: text(data.editorEmail),
+    createdAt: dateValue(data.createdAt),
+  };
+}
+
+function slugReservation(db: Firestore, kind: string, slug: string): DocumentReference {
+  return db.collection(SLUG_RESERVATIONS).doc(`${kind}_${slug}`);
+}
+
+async function nextNumericId(counterKey: string, collectionName?: string) {
+  const db = getFirestoreDb();
+  const counterRef = db.collection(COUNTERS).doc(counterKey);
+  return db.runTransaction(async (transaction) => {
+    const counterSnapshot = await transaction.get(counterRef);
+    let current = numberValue(counterSnapshot.data()?.value);
+    if (!counterSnapshot.exists && collectionName) {
+      const existing = await transaction.get(db.collection(collectionName).limit(500));
+      if (existing.size === 500) {
+        throw new Error(`Initialize the ${counterKey} counter before adding more records.`);
+      }
+      for (const item of existing.docs) {
+        const data = item.data() as Data;
+        current = Math.max(current, documentIdNumber(item.id, data));
+      }
     }
-    if (row.blockedUntil && row.blockedUntil > now) {
-      return { limited: true, retryAfterMs: row.blockedUntil.getTime() - now.getTime() };
-    }
-    const inWindow = now.getTime() - row.windowStartedAt.getTime() < input.windowMs;
-    const attempts = inWindow ? row.attempts + 1 : 1;
-    const blockedUntil = attempts > input.maxAttempts ? new Date(now.getTime() + input.blockMs) : null;
-    await db.update(authRateLimits).set({
-      attempts,
-      windowStartedAt: inWindow ? row.windowStartedAt : now,
-      blockedUntil,
-    }).where(eq(authRateLimits.bucketKey, input.bucketKey));
-    return blockedUntil
-      ? { limited: true, retryAfterMs: input.blockMs }
-      : { limited: false, retryAfterMs: 0 };
-  }
-  const entry = memoryRateLimits.get(input.bucketKey);
-  if (!entry) {
-    memoryRateLimits.set(input.bucketKey, { attempts: 1, windowStartedAt: now, blockedUntil: null });
-    return { limited: false, retryAfterMs: 0 };
-  }
-  if (entry.blockedUntil && entry.blockedUntil > now) {
-    return { limited: true, retryAfterMs: entry.blockedUntil.getTime() - now.getTime() };
-  }
-  const inWindow = now.getTime() - entry.windowStartedAt.getTime() < input.windowMs;
-  const attempts = inWindow ? entry.attempts + 1 : 1;
-  const blockedUntil = attempts > input.maxAttempts ? new Date(now.getTime() + input.blockMs) : null;
-  memoryRateLimits.set(input.bucketKey, {
-    attempts,
-    windowStartedAt: inWindow ? entry.windowStartedAt : now,
-    blockedUntil,
+    const next = current + 1;
+    transaction.set(counterRef, { value: next, updatedAt: new Date() });
+    return next;
   });
-  return blockedUntil
-    ? { limited: true, retryAfterMs: input.blockMs }
-    : { limited: false, retryAfterMs: 0 };
 }
 
-export async function clearAuthRateLimit(bucketKey: string) {
-  const db = await getDb();
-  if (db) {
-    await db.delete(authRateLimits).where(eq(authRateLimits.bucketKey, bucketKey));
-    return;
-  }
-  memoryRateLimits.delete(bucketKey);
+async function getImages(productId: number, legacyData?: Data) {
+  const db = getFirestoreDb();
+  const collection = db.collection(PRODUCTS).doc(String(productId)).collection("images");
+  const snapshot = await collection.orderBy("sortOrder", "asc").get();
+  if (!snapshot.empty) return snapshot.docs.map((item) => mapImage(item, productId));
+
+  const legacyImages = parseImages(legacyData?.images);
+  return legacyImages.map((image, index) => ({
+    id: index + 1,
+    productId,
+    storageKey: image.url,
+    url: image.url,
+    altText: image.altText,
+    sortOrder: index + 1,
+    createdAt: dateValue(legacyData?.updatedAt),
+  }));
 }
 
-export async function listActiveCategories() {
-  const db = await getDb();
-  if (db) {
-    return db.select().from(categories).where(eq(categories.active, true)).orderBy(asc(categories.sortOrder), asc(categories.name));
-  }
-  return memoryCategories.filter((c) => c.active).sort((a, b) => a.sortOrder - b.sortOrder);
+async function getCategoryMap() {
+  const snapshot = await getFirestoreDb().collection(CATEGORIES).get();
+  return new Map(snapshot.docs.map((item) => {
+    const category = mapCategory(item);
+    return [category.id, category] as const;
+  }));
 }
 
-export async function listAdminCategories() {
-  const db = await getDb();
-  if (db) {
-    return db.select().from(categories).orderBy(asc(categories.sortOrder), asc(categories.name));
+async function getCategoryById(id: number | null): Promise<Category | null> {
+  if (!id) return null;
+  const snapshot = await getFirestoreDb().collection(CATEGORIES).doc(String(id)).get();
+  return snapshot.exists ? mapCategory(snapshot as QueryDocumentSnapshot<DocumentData>) : null;
+}
+
+function productSlugQuery(db: Firestore, slug: string) {
+  return db.collection(PRODUCTS).where("slug", "==", slug).limit(2);
+}
+
+function categorySlugQuery(db: Firestore, slug: string) {
+  return db.collection(CATEGORIES).where("slug", "==", slug).limit(2);
+}
+
+async function claimProductSlug(
+  transaction: Transaction,
+  db: Firestore,
+  slug: string,
+  productId: number,
+  field: "slug" | "publishedSlug",
+) {
+  const kind = field === "slug" ? "product_draft" : "product_public";
+  const reservationRef = slugReservation(db, kind, slug);
+  const reservation = await transaction.get(reservationRef);
+  const matchingProducts = await transaction.get(db.collection(PRODUCTS).where(field, "==", slug).limit(2));
+  const ownerId = String(productId);
+  const storedOwner = text(reservation.data()?.ownerId);
+  const conflictingProduct = matchingProducts.docs.find((item) => item.id !== ownerId);
+  if ((storedOwner && storedOwner !== ownerId) || conflictingProduct) {
+    throw new Error("That product slug is already in use.");
   }
-  return [...memoryCategories].sort((a, b) => a.sortOrder - b.sortOrder);
+  return reservationRef;
+}
+
+async function releaseProductSlug(transaction: Transaction, db: Firestore, slug: string | null, productId: number, field: "slug" | "publishedSlug") {
+  if (!slug) return;
+  const kind = field === "slug" ? "product_draft" : "product_public";
+  const ref = slugReservation(db, kind, slug);
+  const snapshot = await transaction.get(ref);
+  if (text(snapshot.data()?.ownerId) === String(productId)) transaction.delete(ref);
+}
+
+async function claimCategorySlug(transaction: Transaction, db: Firestore, slug: string, categoryId: number) {
+  const ref = slugReservation(db, "category", slug);
+  const reservation = await transaction.get(ref);
+  const matches = await transaction.get(categorySlugQuery(db, slug));
+  const ownerId = String(categoryId);
+  const conflicting = matches.docs.find((item) => item.id !== ownerId);
+  const reservedOwner = text(reservation.data()?.ownerId);
+  if ((reservedOwner && reservedOwner !== ownerId) || conflicting) {
+    throw new Error("That category slug is already in use.");
+  }
+  return ref;
+}
+
+async function releaseCategorySlug(transaction: Transaction, db: Firestore, slug: string, categoryId: number) {
+  const ref = slugReservation(db, "category", slug);
+  const reservation = await transaction.get(ref);
+  if (text(reservation.data()?.ownerId) === String(categoryId)) transaction.delete(ref);
+}
+
+async function recordEdit(input: {
+  entityType: string;
+  entityId: string;
+  entityLabel: string;
+  action: string;
+  editorEmail: string;
+}) {
+  try {
+    const db = getFirestoreDb();
+    const id = await nextNumericId("content_edits", CONTENT_EDITS);
+    await db.collection(CONTENT_EDITS).doc(String(id)).create({
+      id,
+      ...input,
+      editorEmail: input.editorEmail.trim().toLowerCase(),
+      createdAt: new Date(),
+    });
+  } catch {
+    // Content mutations keep their existing behavior if the optional audit write fails.
+  }
+}
+
+export async function findAdminByUid(uid: string): Promise<AdminAccount | null> {
+  if (!uid || uid.length > 128) return null;
+  const snapshot = await getFirestoreDb().collection(ADMINS).doc(uid).get();
+  return snapshot.exists ? mapAdmin(snapshot as QueryDocumentSnapshot<DocumentData>) : null;
+}
+
+export async function updateAdminLastSignedIn(uid: string) {
+  const db = getFirestoreDb();
+  const reference = db.collection(ADMINS).doc(uid);
+  const snapshot = await reference.get();
+  if (!snapshot.exists) return;
+  await reference.update({ lastSignedIn: new Date(), updatedAt: new Date() });
+}
+
+export async function listActiveCategories(): Promise<Category[]> {
+  const snapshot = await getFirestoreDb().collection(CATEGORIES).get();
+  return snapshot.docs.map(mapCategory).filter((category) => category.active)
+    .sort((a, b) => a.sortOrder - b.sortOrder || a.name.localeCompare(b.name));
+}
+
+export async function listAdminCategories(): Promise<Category[]> {
+  const snapshot = await getFirestoreDb().collection(CATEGORIES).get();
+  return snapshot.docs.map(mapCategory).sort((a, b) => a.sortOrder - b.sortOrder || a.name.localeCompare(b.name));
 }
 
 export async function saveCategory(input: { id?: number; name: string; slug: string; sortOrder: number }) {
-  const db = await getDb();
-  if (db) {
-    const existingSlug = await db.select({ id: categories.id }).from(categories).where(eq(categories.slug, input.slug)).limit(1);
-    if (existingSlug[0] && existingSlug[0].id !== input.id) throw new Error("That category slug is already in use.");
-    if (input.id) {
-      await db.update(categories).set({ name: input.name, slug: input.slug, sortOrder: input.sortOrder, active: true })
-        .where(eq(categories.id, input.id));
-      return input.id;
+  const db = getFirestoreDb();
+  const now = new Date();
+  const id = input.id ?? await nextNumericId("categories", CATEGORIES);
+  const reference = db.collection(CATEGORIES).doc(String(id));
+
+  await db.runTransaction(async (transaction) => {
+    const currentSnapshot = await transaction.get(reference);
+    if (input.id && !currentSnapshot.exists) throw new Error("Category not found.");
+    const current = currentSnapshot.data() as Data | undefined;
+    const previousSlug = text(current?.slug);
+    const newSlugReservation = await claimCategorySlug(transaction, db, input.slug, id);
+    let previousSlugReservation: DocumentReference | null = null;
+    if (previousSlug && previousSlug !== input.slug) {
+      previousSlugReservation = slugReservation(db, "category", previousSlug);
+      const previousReservation = await transaction.get(previousSlugReservation);
+      if (text(previousReservation.data()?.ownerId) !== String(id)) previousSlugReservation = null;
     }
-    const result = await db.insert(categories).values({ name: input.name, slug: input.slug, sortOrder: input.sortOrder, active: true });
-    return Number((result[0] as { insertId?: number }).insertId);
-  }
-  const existing = memoryCategories.find((c) => c.slug === input.slug);
-  if (existing && existing.id !== input.id) throw new Error("That category slug is already in use.");
-  if (input.id) {
-    const cat = memoryCategories.find((c) => c.id === input.id);
-    if (cat) {
-      cat.name = input.name;
-      cat.slug = input.slug;
-      cat.sortOrder = input.sortOrder;
-      cat.active = true;
-      cat.updatedAt = new Date();
-      return input.id;
-    }
-  }
-  const id = memoryCategories.length + 1;
-  memoryCategories.push({
-    id,
-    name: input.name,
-    slug: input.slug,
-    sortOrder: input.sortOrder,
-    active: true,
-    createdAt: new Date(),
-    updatedAt: new Date(),
+
+    const category: Category = {
+      id,
+      name: input.name,
+      slug: input.slug,
+      sortOrder: input.sortOrder,
+      active: true,
+      createdAt: dateValue(current?.createdAt, now),
+      updatedAt: now,
+    };
+    transaction.set(reference, category);
+    transaction.set(newSlugReservation, { ownerId: String(id), updatedAt: now });
+    if (previousSlugReservation) transaction.delete(previousSlugReservation);
   });
+
   return id;
 }
 
 export async function archiveCategory(id: number) {
-  const db = await getDb();
-  if (db) {
-    await db.update(categories).set({ active: false }).where(eq(categories.id, id));
-    return;
-  }
-  const cat = memoryCategories.find((c) => c.id === id);
-  if (cat) cat.active = false;
+  const db = getFirestoreDb();
+  const reference = db.collection(CATEGORIES).doc(String(id));
+  const snapshot = await reference.get();
+  if (!snapshot.exists) throw new Error("Category not found.");
+  await reference.update({ active: false, updatedAt: new Date() });
 }
 
-export async function listPublishedProducts(categorySlug?: string) {
-  const db = await getDb();
-  if (db) {
-    const rows = await db.select().from(products).where(eq(products.status, "published"))
-      .orderBy(desc(products.featured), desc(products.publishedAt));
-    return rows
-      .filter((row) => Boolean(row.publishedData) && (!categorySlug || row.publishedData?.categorySlug === categorySlug))
-      .map((row) => ({ id: row.id, ...row.publishedData!, publishedAt: row.publishedAt }));
-  }
-  return memoryProducts
-    .filter((p) => p.status === "published" && (!categorySlug || p.publishedData?.categorySlug === categorySlug))
-    .map((p) => ({ id: p.id, ...p.publishedData!, publishedAt: p.publishedAt }));
+export async function listPublishedProducts(categorySlug?: string): Promise<PublishedProduct[]> {
+  const snapshot = await getFirestoreDb().collection(PRODUCTS).get();
+  return snapshot.docs.flatMap((item) => {
+    const product = mapProductData(item.id, item.data() as Data);
+    const published = product.publishedData;
+    if (product.status !== "published" || !published || (categorySlug && published.categorySlug !== categorySlug)) return [];
+    return [{ id: product.id, ...published, publishedAt: product.publishedAt }];
+  }).sort((a, b) => Number(b.featured) - Number(a.featured)
+    || (b.publishedAt?.getTime() ?? 0) - (a.publishedAt?.getTime() ?? 0));
 }
 
-export async function getPublishedProduct(slug: string) {
-  const db = await getDb();
-  if (db) {
-    const [row] = await db.select().from(products).where(and(
-      eq(products.status, "published"),
-      eq(products.publishedSlug, slug),
-    )).limit(1);
-    return row?.publishedData ? { id: row.id, ...row.publishedData, publishedAt: row.publishedAt } : null;
-  }
-  const prod = memoryProducts.find((p) => p.status === "published" && p.publishedSlug === slug);
-  return prod?.publishedData ? { id: prod.id, ...prod.publishedData, publishedAt: prod.publishedAt } : null;
+export async function getPublishedProduct(slug: string): Promise<PublishedProduct | null> {
+  const snapshot = await getFirestoreDb().collection(PRODUCTS).where("publishedSlug", "==", slug).limit(1).get();
+  const item = snapshot.docs.find((document) => text(document.get("status")) === "published");
+  if (!item) return null;
+  const product = mapProductData(item.id, item.data() as Data);
+  return product.publishedData ? { id: product.id, ...product.publishedData, publishedAt: product.publishedAt } : null;
 }
 
-export async function getPublishedPage(pageKey: string) {
-  const db = await getDb();
-  if (db) {
-    const [row] = await db.select().from(sitePages).where(eq(sitePages.pageKey, pageKey)).limit(1);
-    return row?.publishedContent ?? null;
+export async function getPublishedPage(pageKey: string): Promise<SiteContent | null> {
+  const db = getFirestoreDb();
+  const publicSnapshot = await db.collection(PUBLIC_SITE_CONTENT).doc(pageKey).get();
+  if (publicSnapshot.exists) {
+    const data = publicSnapshot.data() as Data;
+    const content = parseSiteContent(data.publishedContent ?? data.content ?? data);
+    if (content) return content;
   }
-  const page = memoryPages.find((p) => p.pageKey === pageKey);
-  return page?.publishedContent ?? null;
+
+  const privateSnapshot = await db.collection(SITE_PAGES).doc(pageKey).get();
+  if (!privateSnapshot.exists) return null;
+  const data = privateSnapshot.data() as Data;
+  return parseSiteContent(data.publishedContent);
 }
 
-async function getProductImages(productId: number) {
-  const db = await getDb();
-  if (db) {
-    return db.select().from(productImages).where(eq(productImages.productId, productId)).orderBy(asc(productImages.sortOrder), asc(productImages.id));
-  }
-  return memoryProductImages.filter((i) => i.productId === productId).sort((a, b) => a.sortOrder - b.sortOrder);
+export async function getAdminProduct(id: number): Promise<ProductWithCategory | null> {
+  const db = getFirestoreDb();
+  const snapshot = await db.collection(PRODUCTS).doc(String(id)).get();
+  if (!snapshot.exists) return null;
+  const data = snapshot.data() as Data;
+  const product = mapProductData(snapshot.id, data);
+  const [images, category] = await Promise.all([getImages(product.id, data), getCategoryById(product.categoryId)]);
+  return { ...product, images, category };
 }
 
-export async function getAdminProduct(id: number) {
-  const db = await getDb();
-  if (db) {
-    const [product] = await db.select().from(products).where(eq(products.id, id)).limit(1);
-    if (!product) return null;
-    const images = await getProductImages(id);
-    const [category] = product.categoryId
-      ? await db.select().from(categories).where(eq(categories.id, product.categoryId)).limit(1)
-      : [];
-    return { ...product, images, category: category ?? null };
-  }
-  const prod = memoryProducts.find((p) => p.id === id);
-  if (!prod) return null;
-  const images = await getProductImages(id);
-  const category = memoryCategories.find((c) => c.id === prod.categoryId) ?? null;
-  return { ...prod, images, category };
-}
+export async function listAdminProducts(): Promise<ProductWithCategory[]> {
+  const db = getFirestoreDb();
+  const snapshot = await db.collection(PRODUCTS).get();
+  const categories = await getCategoryMap();
+  const activeProducts = snapshot.docs.map((item) => mapProductData(item.id, item.data() as Data))
+    .filter((product) => product.status !== "archived")
+    .sort((a, b) => b.updatedAt.getTime() - a.updatedAt.getTime());
 
-export async function listAdminProducts() {
-  const db = await getDb();
-  if (db) {
-    const rows = await db.select().from(products).where(ne(products.status, "archived")).orderBy(desc(products.updatedAt));
-    const result = [];
-    for (const product of rows) {
-      const [category] = product.categoryId
-        ? await db.select().from(categories).where(eq(categories.id, product.categoryId)).limit(1)
-        : [];
-      const images = await getProductImages(product.id);
-      result.push({ ...product, category: category ?? null, images });
-    }
-    return result;
-  }
-  const result = [];
-  for (const prod of memoryProducts.filter((p) => p.status !== "archived")) {
-    const images = await getProductImages(prod.id);
-    const category = memoryCategories.find((c) => c.id === prod.categoryId) ?? null;
-    result.push({ ...prod, category, images });
-  }
-  return result;
+  return Promise.all(activeProducts.map(async (product) => {
+    const source = snapshot.docs.find((item) => item.id === String(product.id))?.data() as Data | undefined;
+    const images = await getImages(product.id, source);
+    return { ...product, images, category: product.categoryId ? categories.get(product.categoryId) ?? null : null };
+  }));
 }
 
 export async function saveProductDraft(input: {
@@ -639,70 +527,37 @@ export async function saveProductDraft(input: {
   flipkartUrl: string | null;
   editor: AdminAccount;
 }) {
-  const db = await getDb();
+  const db = getFirestoreDb();
   const now = new Date();
-  if (db) {
-    const [slugOwner] = await db.select({ id: products.id }).from(products).where(eq(products.slug, input.slug)).limit(1);
-    if (slugOwner && slugOwner.id !== input.id) throw new Error("That product slug is already in use.");
-    let id = input.id;
-    if (id) {
-      const [current] = await db.select().from(products).where(eq(products.id, id)).limit(1);
-      if (!current || current.status === "archived") throw new Error("Product not found.");
-      await db.update(products).set({
-        name: input.name,
-        slug: input.slug,
-        description: input.description,
-        categoryId: input.categoryId,
-        featured: input.featured,
-        informationalOnly: input.informationalOnly,
-        amazonUrl: input.amazonUrl,
-        flipkartUrl: input.flipkartUrl,
-        status: current.status === "published" ? "published" : "draft",
-        hasDraftChanges: current.status === "published",
-        updatedBy: input.editor.id,
-        updatedAt: now,
-      }).where(eq(products.id, id));
-    } else {
-      const result = await db.insert(products).values({
-        name: input.name,
-        slug: input.slug,
-        description: input.description,
-        categoryId: input.categoryId,
-        featured: input.featured,
-        informationalOnly: input.informationalOnly,
-        amazonUrl: input.amazonUrl,
-        flipkartUrl: input.flipkartUrl,
-        status: "draft",
-        hasDraftChanges: false,
-        createdBy: input.editor.id,
-        updatedBy: input.editor.id,
-      });
-      id = Number((result[0] as { insertId?: number }).insertId);
+  const id = input.id ?? await nextNumericId("products", PRODUCTS);
+  const reference = db.collection(PRODUCTS).doc(String(id));
+  let currentProduct: Product | null = null;
+
+  await db.runTransaction(async (transaction) => {
+    const currentSnapshot = await transaction.get(reference);
+    if (input.id && !currentSnapshot.exists) throw new Error("Product not found.");
+    const currentData = currentSnapshot.exists ? currentSnapshot.data() as Data : null;
+    if (currentData && text(currentData.status) === "archived") throw new Error("Product not found.");
+    currentProduct = currentData ? mapProductData(reference.id, currentData) : null;
+
+    let categorySnapshot = null;
+    if (input.categoryId !== null) {
+      categorySnapshot = await transaction.get(db.collection(CATEGORIES).doc(String(input.categoryId)));
+      if (!categorySnapshot.exists || categorySnapshot.data()?.active === false) {
+        throw new Error("Choose an active category before saving this product.");
+      }
     }
-    await recordEdit({ entityType: "product", entityId: String(id), entityLabel: input.name, action: "saved draft", editorEmail: input.editor.email });
-    return id;
-  }
-  const existing = memoryProducts.find((p) => p.slug === input.slug);
-  if (existing && existing.id !== input.id) throw new Error("That product slug is already in use.");
-  let id = input.id;
-  if (id) {
-    const prod = memoryProducts.find((p) => p.id === id);
-    if (!prod || prod.status === "archived") throw new Error("Product not found.");
-    Object.assign(prod, {
-      name: input.name,
-      slug: input.slug,
-      description: input.description,
-      categoryId: input.categoryId,
-      featured: input.featured,
-      informationalOnly: input.informationalOnly,
-      amazonUrl: input.amazonUrl,
-      flipkartUrl: input.flipkartUrl,
-      updatedBy: input.editor.id,
-      updatedAt: now,
-    });
-  } else {
-    id = memoryProducts.length + 1;
-    memoryProducts.push({
+
+    const slugReservationRef = await claimProductSlug(transaction, db, input.slug, id, "slug");
+    const previousSlug = currentProduct?.slug ?? null;
+    let oldSlugRef: DocumentReference | null = null;
+    if (previousSlug && previousSlug !== input.slug) {
+      oldSlugRef = slugReservation(db, "product_draft", previousSlug);
+      const oldReservation = await transaction.get(oldSlugRef);
+      if (text(oldReservation.data()?.ownerId) !== String(id)) oldSlugRef = null;
+    }
+
+    const next: Product = {
       id,
       name: input.name,
       slug: input.slug,
@@ -710,19 +565,24 @@ export async function saveProductDraft(input: {
       categoryId: input.categoryId,
       featured: input.featured,
       informationalOnly: input.informationalOnly,
-      status: "draft",
-      hasDraftChanges: false,
-      publishedSlug: null,
-      publishedData: null,
+      status: currentProduct?.status ?? "draft",
+      hasDraftChanges: currentProduct?.status === "published",
+      publishedSlug: currentProduct?.publishedSlug ?? null,
+      publishedData: currentProduct?.publishedData ?? null,
       amazonUrl: input.amazonUrl,
       flipkartUrl: input.flipkartUrl,
-      createdAt: now,
+      createdAt: currentProduct?.createdAt ?? now,
       updatedAt: now,
-      publishedAt: null,
-      createdBy: input.editor.id,
+      createdBy: currentProduct?.createdBy ?? input.editor.id,
       updatedBy: input.editor.id,
-    });
-  }
+      publishedAt: currentProduct?.publishedAt ?? null,
+      images: [],
+    };
+    transaction.set(reference, next);
+    transaction.set(slugReservationRef, { ownerId: String(id), updatedAt: now });
+    if (oldSlugRef) transaction.delete(oldSlugRef);
+  });
+
   await recordEdit({ entityType: "product", entityId: String(id), entityLabel: input.name, action: "saved draft", editorEmail: input.editor.email });
   return id;
 }
@@ -734,195 +594,256 @@ export async function addProductImage(input: {
   altText: string;
   sortOrder: number;
 }) {
-  const db = await getDb();
-  if (db) {
-    const [product] = await db.select({ id: products.id, status: products.status }).from(products).where(eq(products.id, input.productId)).limit(1);
-    if (!product || product.status === "archived") throw new Error("Product not found.");
-    const result = await db.insert(productImages).values(input);
-    const imageId = Number((result[0] as { insertId?: number }).insertId);
-    if (product.status === "published") {
-      await db.update(products).set({ hasDraftChanges: true, updatedAt: new Date() }).where(eq(products.id, input.productId));
-    }
-    return imageId;
-  }
-  const id = memoryProductImages.length + 1;
-  memoryProductImages.push({ id, ...input });
-  return id;
+  const db = getFirestoreDb();
+  const productRef = db.collection(PRODUCTS).doc(String(input.productId));
+  const imageId = await nextNumericId("product_images");
+  const now = new Date();
+
+  await db.runTransaction(async (transaction) => {
+    const productSnapshot = await transaction.get(productRef);
+    if (!productSnapshot.exists || text(productSnapshot.data()?.status) === "archived") throw new Error("Product not found.");
+    const product = mapProductData(productSnapshot.id, productSnapshot.data() as Data);
+    transaction.create(productRef.collection("images").doc(String(imageId)), {
+      id: imageId,
+      productId: input.productId,
+      storageKey: input.storageKey,
+      url: input.url,
+      altText: input.altText,
+      sortOrder: input.sortOrder,
+      createdAt: now,
+    });
+    transaction.update(productRef, {
+      hasDraftChanges: product.status === "published" ? true : product.hasDraftChanges,
+      updatedAt: now,
+    });
+  });
+
+  return imageId;
 }
 
 export async function updateProductImageAlt(input: { productId: number; imageId: number; altText: string; sortOrder: number }) {
-  const db = await getDb();
-  if (db) {
-    await db.update(productImages).set({ altText: input.altText, sortOrder: input.sortOrder })
-      .where(and(eq(productImages.id, input.imageId), eq(productImages.productId, input.productId)));
-    await db.update(products).set({ hasDraftChanges: true, updatedAt: new Date() }).where(eq(products.id, input.productId));
-    return;
-  }
-  const img = memoryProductImages.find((i) => i.id === input.imageId && i.productId === input.productId);
-  if (img) {
-    img.altText = input.altText;
-    img.sortOrder = input.sortOrder;
-  }
+  const db = getFirestoreDb();
+  const productRef = db.collection(PRODUCTS).doc(String(input.productId));
+  const imageRef = productRef.collection("images").doc(String(input.imageId));
+  await db.runTransaction(async (transaction) => {
+    const [productSnapshot, imageSnapshot] = await Promise.all([transaction.get(productRef), transaction.get(imageRef)]);
+    if (!productSnapshot.exists || !imageSnapshot.exists) throw new Error("Product image not found.");
+    const product = mapProductData(productSnapshot.id, productSnapshot.data() as Data);
+    transaction.update(imageRef, { altText: input.altText, sortOrder: input.sortOrder });
+    transaction.update(productRef, {
+      hasDraftChanges: product.status === "published" ? true : product.hasDraftChanges,
+      updatedAt: new Date(),
+    });
+  });
 }
 
 export async function removeProductImage(productId: number, imageId: number) {
-  const db = await getDb();
-  if (db) {
-    await db.delete(productImages).where(and(eq(productImages.id, imageId), eq(productImages.productId, productId)));
-    await db.update(products).set({ hasDraftChanges: true, updatedAt: new Date() }).where(eq(products.id, productId));
-    return;
-  }
-  const idx = memoryProductImages.findIndex((i) => i.id === imageId && i.productId === productId);
-  if (idx !== -1) memoryProductImages.splice(idx, 1);
+  const db = getFirestoreDb();
+  const productRef = db.collection(PRODUCTS).doc(String(productId));
+  const imageRef = productRef.collection("images").doc(String(imageId));
+  await db.runTransaction(async (transaction) => {
+    const [productSnapshot, imageSnapshot] = await Promise.all([transaction.get(productRef), transaction.get(imageRef)]);
+    if (!productSnapshot.exists || !imageSnapshot.exists) throw new Error("Product image not found.");
+    const product = mapProductData(productSnapshot.id, productSnapshot.data() as Data);
+    transaction.delete(imageRef);
+    transaction.update(productRef, {
+      hasDraftChanges: product.status === "published" ? true : product.hasDraftChanges,
+      updatedAt: new Date(),
+    });
+  });
 }
 
 export async function publishProduct(id: number, editor: AdminAccount) {
-  const product = await getAdminProduct(id);
-  if (!product || product.status === "archived") throw new Error("Product not found.");
-  const category = product.category;
-  if (!product.name.trim() || !product.slug.trim() || !category?.active || !product.images.length) {
+  const db = getFirestoreDb();
+  const productWithCategory = await getAdminProduct(id);
+  if (!productWithCategory || productWithCategory.status === "archived") throw new Error("Product not found.");
+  const category = productWithCategory.category;
+  if (!productWithCategory.name.trim() || !productWithCategory.slug.trim() || !category?.active || !productWithCategory.images.length) {
     throw new Error("Add a name, unique slug, category, and at least one image before publishing.");
   }
+
   const snapshot: PublishedProductSnapshot = {
-    name: product.name,
-    slug: product.slug,
-    description: product.description,
+    name: productWithCategory.name,
+    slug: productWithCategory.slug,
+    description: productWithCategory.description,
     categoryId: category.id,
     categoryName: category.name,
     categorySlug: category.slug,
-    featured: product.featured,
-    informationalOnly: product.informationalOnly,
-    amazonUrl: product.amazonUrl,
-    flipkartUrl: product.flipkartUrl,
-    images: product.images.map((image) => ({ url: image.url, altText: image.altText })),
+    featured: productWithCategory.featured,
+    informationalOnly: productWithCategory.informationalOnly,
+    amazonUrl: productWithCategory.amazonUrl,
+    flipkartUrl: productWithCategory.flipkartUrl,
+    images: productWithCategory.images.map((image) => ({ url: image.url, altText: image.altText })),
   };
-  const now = new Date();
-  const db = await getDb();
-  if (db) {
-    await db.update(products).set({
+  const productRef = db.collection(PRODUCTS).doc(String(id));
+  const publishedReservationRef = slugReservation(db, "product_public", productWithCategory.slug);
+  const draftReservationRef = slugReservation(db, "product_draft", productWithCategory.slug);
+
+  await db.runTransaction(async (transaction) => {
+    const [currentSnapshot, categorySnapshot, publicReservation, draftReservation, slugMatches] = await Promise.all([
+      transaction.get(productRef),
+      transaction.get(db.collection(CATEGORIES).doc(String(category.id))),
+      transaction.get(publishedReservationRef),
+      transaction.get(draftReservationRef),
+      transaction.get(db.collection(PRODUCTS).where("publishedSlug", "==", productWithCategory.slug).limit(2)),
+    ]);
+    if (!currentSnapshot.exists || text(currentSnapshot.data()?.status) === "archived" || !categorySnapshot.exists || categorySnapshot.data()?.active !== true) {
+      throw new Error("Product or category is no longer available for publishing.");
+    }
+    const owner = text(publicReservation.data()?.ownerId);
+    const conflict = slugMatches.docs.find((item) => item.id !== String(id));
+    if ((owner && owner !== String(id)) || conflict) throw new Error("That published product slug is already in use.");
+
+    const current = mapProductData(currentSnapshot.id, currentSnapshot.data() as Data);
+    if (current.publishedSlug && current.publishedSlug !== productWithCategory.slug) {
+      const oldPublicRef = slugReservation(db, "product_public", current.publishedSlug);
+      const oldPublic = await transaction.get(oldPublicRef);
+      if (text(oldPublic.data()?.ownerId) === String(id)) transaction.delete(oldPublicRef);
+    }
+    transaction.set(publishedReservationRef, { ownerId: String(id), updatedAt: new Date() });
+    if (!draftReservation.exists) transaction.set(draftReservationRef, { ownerId: String(id), updatedAt: new Date() });
+    transaction.update(productRef, {
       status: "published",
-      publishedSlug: product.slug,
+      publishedSlug: productWithCategory.slug,
       publishedData: snapshot,
       hasDraftChanges: false,
-      publishedAt: now,
+      publishedAt: new Date(),
       updatedBy: editor.id,
-      updatedAt: now,
-    }).where(eq(products.id, id));
-  } else {
-    const p = memoryProducts.find((item) => item.id === id);
-    if (p) {
-      p.status = "published";
-      p.publishedSlug = product.slug;
-      p.publishedData = snapshot;
-      p.hasDraftChanges = false;
-      p.publishedAt = now;
-      p.updatedBy = editor.id;
-      p.updatedAt = now;
-    }
-  }
-  await recordEdit({ entityType: "product", entityId: String(id), entityLabel: product.name, action: "published", editorEmail: editor.email });
+      updatedAt: new Date(),
+    });
+  });
+
+  await recordEdit({ entityType: "product", entityId: String(id), entityLabel: productWithCategory.name, action: "published", editorEmail: editor.email });
+}
+
+async function setProductUnpublished(id: number, editor: AdminAccount, archive = false) {
+  const db = getFirestoreDb();
+  const reference = db.collection(PRODUCTS).doc(String(id));
+  await db.runTransaction(async (transaction) => {
+    const snapshot = await transaction.get(reference);
+    if (!snapshot.exists) throw new Error("Product not found.");
+    const product = mapProductData(snapshot.id, snapshot.data() as Data);
+    await releaseProductSlug(transaction, db, product.publishedSlug, id, "publishedSlug");
+    transaction.update(reference, {
+      status: archive ? "archived" : "draft",
+      publishedSlug: null,
+      publishedData: null,
+      hasDraftChanges: false,
+      publishedAt: null,
+      updatedBy: editor.id,
+      updatedAt: new Date(),
+    });
+  });
+  await recordEdit({ entityType: "product", entityId: String(id), entityLabel: String(id), action: archive ? "archived" : "unpublished", editorEmail: editor.email });
 }
 
 export async function unpublishProduct(id: number, editor: AdminAccount) {
-  const db = await getDb();
-  if (db) {
-    await db.update(products).set({ status: "draft", publishedSlug: null, publishedData: null, hasDraftChanges: false, publishedAt: null, updatedBy: editor.id, updatedAt: new Date() }).where(eq(products.id, id));
-  } else {
-    const p = memoryProducts.find((item) => item.id === id);
-    if (p) {
-      p.status = "draft";
-      p.publishedSlug = null;
-      p.publishedData = null;
-    }
-  }
-  await recordEdit({ entityType: "product", entityId: String(id), entityLabel: String(id), action: "unpublished", editorEmail: editor.email });
+  return setProductUnpublished(id, editor, false);
 }
 
 export async function archiveProduct(id: number, editor: AdminAccount) {
-  const db = await getDb();
-  if (db) {
-    await db.update(products).set({ status: "archived", publishedSlug: null, publishedData: null, hasDraftChanges: false, publishedAt: null, updatedBy: editor.id, updatedAt: new Date() }).where(eq(products.id, id));
-  } else {
-    const p = memoryProducts.find((item) => item.id === id);
-    if (p) p.status = "archived";
-  }
-  await recordEdit({ entityType: "product", entityId: String(id), entityLabel: String(id), action: "archived", editorEmail: editor.email });
+  return setProductUnpublished(id, editor, true);
 }
 
-export async function getAdminSitePage(pageKey: string) {
-  const db = await getDb();
-  if (db) {
-    const [row] = await db.select().from(sitePages).where(eq(sitePages.pageKey, pageKey)).limit(1);
-    return row ?? null;
+export async function getAdminSitePage(pageKey: string): Promise<SitePage | null> {
+  const db = getFirestoreDb();
+  const pageSnapshot = await db.collection(SITE_PAGES).doc(pageKey).get();
+  if (pageSnapshot.exists) {
+    const data = pageSnapshot.data() as Data;
+    const draftContent = parseSiteContent(data.draftContent);
+    if (!draftContent) return null;
+    return {
+      id: documentIdNumber(pageSnapshot.id, data),
+      pageKey,
+      draftContent,
+      publishedContent: parseSiteContent(data.publishedContent),
+      status: text(data.status) === "published" ? "published" : "draft",
+      version: Math.max(1, numberValue(data.version, 1)),
+      updatedAt: dateValue(data.updatedAt),
+      updatedBy: data.updatedBy === null || data.updatedBy === undefined ? null : numberValue(data.updatedBy, 0),
+      publishedAt: nullableDate(data.publishedAt),
+    };
   }
-  return memoryPages.find((p) => p.pageKey === pageKey) ?? null;
+
+  const publicSnapshot = await db.collection(PUBLIC_SITE_CONTENT).doc(pageKey).get();
+  if (!publicSnapshot.exists) return null;
+  const publicData = publicSnapshot.data() as Data;
+  const content = parseSiteContent(publicData.publishedContent ?? publicData.content ?? publicData);
+  if (!content) return null;
+  const now = dateValue(publicData.updatedAt);
+  return {
+    id: 0,
+    pageKey,
+    draftContent: content,
+    publishedContent: content,
+    status: "published",
+    version: 1,
+    updatedAt: now,
+    updatedBy: null,
+    publishedAt: nullableDate(publicData.publishedAt) ?? now,
+  };
 }
 
 export async function saveSitePage(input: { pageKey: string; content: SiteContent; editor: AdminAccount }) {
+  const db = getFirestoreDb();
+  const reference = db.collection(SITE_PAGES).doc(input.pageKey);
+  const existingSnapshot = await reference.get();
+  const id = existingSnapshot.exists ? documentIdNumber(reference.id, existingSnapshot.data() as Data) : await nextNumericId("site_pages", SITE_PAGES);
   const now = new Date();
-  const db = await getDb();
-  if (db) {
-    const [current] = await db.select().from(sitePages).where(eq(sitePages.pageKey, input.pageKey)).limit(1);
-    if (current) {
-      await db.update(sitePages).set({
-        draftContent: input.content,
-        version: current.version + 1,
-        status: current.publishedContent ? "published" : "draft",
-        updatedBy: input.editor.id,
-        updatedAt: now,
-      }).where(eq(sitePages.id, current.id));
-    } else {
-      await db.insert(sitePages).values({
-        pageKey: input.pageKey,
-        draftContent: input.content,
-        publishedContent: null,
-        status: "draft",
-        version: 1,
-        updatedBy: input.editor.id,
-      });
-    }
-  } else {
-    const current = memoryPages.find((p) => p.pageKey === input.pageKey);
-    if (current) {
-      current.draftContent = input.content;
-      current.version++;
-      current.updatedAt = now;
-    } else {
-      memoryPages.push({
-        id: memoryPages.length + 1,
-        pageKey: input.pageKey,
-        draftContent: input.content,
-        publishedContent: null,
-        status: "draft",
-        version: 1,
-        updatedAt: now,
-      });
-    }
-  }
+
+  await db.runTransaction(async (transaction) => {
+    const snapshot = await transaction.get(reference);
+    const current = snapshot.exists ? snapshot.data() as Data : {};
+    const publishedContent = parseSiteContent(current.publishedContent);
+    const data = {
+      id,
+      pageKey: input.pageKey,
+      draftContent: input.content,
+      publishedContent,
+      status: publishedContent ? "published" : "draft",
+      version: Math.max(0, numberValue(current.version)) + 1,
+      createdAt: dateValue(current.createdAt, now),
+      updatedAt: now,
+      updatedBy: input.editor.id,
+      publishedAt: nullableDate(current.publishedAt),
+    };
+    transaction.set(reference, data);
+  });
+
   await recordEdit({ entityType: "page", entityId: input.pageKey, entityLabel: input.pageKey, action: "saved draft", editorEmail: input.editor.email });
 }
 
 export async function publishSitePage(pageKey: string, editor: AdminAccount) {
+  const db = getFirestoreDb();
+  const reference = db.collection(SITE_PAGES).doc(pageKey);
   const now = new Date();
-  const db = await getDb();
-  if (db) {
-    const [page] = await db.select().from(sitePages).where(eq(sitePages.pageKey, pageKey)).limit(1);
-    if (!page) throw new Error("Save page content before publishing.");
-    await db.update(sitePages).set({ publishedContent: page.draftContent, status: "published", publishedAt: now, updatedBy: editor.id, updatedAt: now }).where(eq(sitePages.id, page.id));
-  } else {
-    const page = memoryPages.find((p) => p.pageKey === pageKey);
-    if (!page) throw new Error("Save page content before publishing.");
-    page.publishedContent = page.draftContent;
-    page.status = "published";
-    page.updatedAt = now;
-  }
+  await db.runTransaction(async (transaction) => {
+    const snapshot = await transaction.get(reference);
+    if (!snapshot.exists) throw new Error("Save page content before publishing.");
+    const data = snapshot.data() as Data;
+    const draftContent = parseSiteContent(data.draftContent);
+    if (!draftContent) throw new Error("Save valid page content before publishing.");
+    transaction.set(reference, {
+      ...data,
+      publishedContent: draftContent,
+      status: "published",
+      publishedAt: now,
+      updatedAt: now,
+      updatedBy: editor.id,
+    });
+    transaction.set(db.collection(PUBLIC_SITE_CONTENT).doc(pageKey), {
+      ...draftContent,
+      publishedAt: now,
+      updatedAt: now,
+    });
+  });
   await recordEdit({ entityType: "page", entityId: pageKey, entityLabel: pageKey, action: "published", editorEmail: editor.email });
 }
 
 export async function getDashboardData() {
   const allProducts = await listAdminProducts();
   const allCategories = await listAdminCategories();
-  const categoryById = new Map(allCategories.map((c) => [c.id, c]));
+  const categoryById = new Map(allCategories.map((category) => [category.id, category]));
   const warnings: Array<{ productId: number; name: string; slug: string; issues: string[] }> = [];
 
   for (const product of allProducts) {
@@ -935,30 +856,13 @@ export async function getDashboardData() {
     if (issues.length) warnings.push({ productId: product.id, name: product.name, slug: product.slug, issues });
   }
 
+  const recentSnapshot = await getFirestoreDb().collection(CONTENT_EDITS).orderBy("createdAt", "desc").limit(10).get();
+  const recentEdits = recentSnapshot.docs.map(mapContentEdit);
   return {
     total: allProducts.length,
-    drafts: allProducts.filter((r) => r.status === "draft").length,
-    published: allProducts.filter((r) => r.status === "published").length,
-    recentEdits: memoryEdits.slice(-10),
+    drafts: allProducts.filter((product) => product.status === "draft").length,
+    published: allProducts.filter((product) => product.status === "published").length,
+    recentEdits,
     warnings,
   };
-}
-
-async function recordEdit(input: {
-  entityType: string;
-  entityId: string;
-  entityLabel: string;
-  action: string;
-  editorEmail: string;
-}) {
-  const db = await getDb();
-  if (db) {
-    try {
-      await db.insert(contentEdits).values(input);
-    } catch {
-      // Ignored
-    }
-  } else {
-    memoryEdits.push({ id: memoryEdits.length + 1, ...input, createdAt: new Date() });
-  }
 }

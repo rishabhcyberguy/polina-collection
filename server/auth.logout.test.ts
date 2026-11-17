@@ -1,65 +1,54 @@
 import { describe, expect, it } from "vitest";
 import { appRouter } from "./routers";
-import { ADMIN_SESSION_COOKIE, CSRF_COOKIE, sha256 } from "./_core/polina-auth";
 import type { TrpcContext } from "./_core/context";
+import type { AdminAccount, User } from "../shared/polina-types";
 
-type CookieCall = { name: string; options: Record<string, unknown> };
-
-type AuthenticatedUser = NonNullable<TrpcContext["user"]>;
-
-function createAuthContext(headerToken: string = "csrf-test-token"): { ctx: TrpcContext; clearedCookies: CookieCall[] } {
-  const clearedCookies: CookieCall[] = [];
-  const csrfToken = "csrf-test-token";
-  const admin = { id: 1, email: "admin@example.test", name: "Admin" } as NonNullable<TrpcContext["admin"]>;
-  const user = {
+function createContext(isAdmin: boolean): TrpcContext {
+  const now = new Date();
+  const admin: AdminAccount | null = isAdmin ? {
     id: 1,
-    openId: "polina-email-admin-1",
-    email: admin.email,
-    name: admin.name,
-    loginMethod: "email_password",
+    uid: "firebase-test-uid",
+    email: "owner@example.test",
+    name: "Owner",
     role: "admin",
-    createdAt: new Date(),
-    updatedAt: new Date(),
-    lastSignedIn: new Date(),
-  } as unknown as AuthenticatedUser;
-  const ctx: TrpcContext = {
+    active: true,
+    createdAt: now,
+    updatedAt: now,
+    lastSignedIn: now,
+  } : null;
+  const user: User | null = admin ? {
+    id: admin.id,
+    openId: admin.uid,
+    name: admin.name,
+    email: admin.email,
+    loginMethod: "firebase",
+    role: "admin",
+    createdAt: now,
+    updatedAt: now,
+    lastSignedIn: now,
+  } : null;
+
+  return {
+    req: { headers: {} } as TrpcContext["req"],
+    res: {} as TrpcContext["res"],
     user,
     admin,
-    adminSession: { admin, sessionId: 1, tokenHash: "unused-in-test", csrfHash: sha256(csrfToken) },
-    req: {
-      protocol: "https",
-      headers: { cookie: `${CSRF_COOKIE}=${csrfToken}` },
-      header: (name: string) => name.toLowerCase() === "x-polina-csrf" ? headerToken : undefined,
-    } as TrpcContext["req"],
-    res: {
-      clearCookie: (name: string, options: Record<string, unknown>) => {
-        clearedCookies.push({ name, options });
-      },
-    } as TrpcContext["res"],
   };
-  return { ctx, clearedCookies };
 }
 
-describe("auth.logout", () => {
-  it("clears both secure session cookies after CSRF verification", async () => {
-    const { ctx, clearedCookies } = createAuthContext();
-    const caller = appRouter.createCaller(ctx);
-
-    const result = await caller.auth.logout();
-
-    expect(result).toEqual({ success: true });
-    expect(clearedCookies).toHaveLength(2);
-    const adminSession = clearedCookies.find(cookie => cookie.name === ADMIN_SESSION_COOKIE);
-    const csrf = clearedCookies.find(cookie => cookie.name === CSRF_COOKIE);
-    expect(adminSession?.options).toMatchObject({ secure: true, sameSite: "none", httpOnly: true, path: "/" });
-    expect(csrf?.options).toMatchObject({ secure: true, sameSite: "none", httpOnly: false, path: "/" });
+describe("Firebase-backed admin authorization", () => {
+  it("returns the verified administrator identity from auth.me", async () => {
+    const caller = appRouter.createCaller(createContext(true));
+    await expect(caller.auth.me()).resolves.toEqual({
+      id: 1,
+      name: "Owner",
+      email: "owner@example.test",
+      role: "admin",
+    });
   });
 
-  it("rejects logout when the CSRF header does not match its cookie", async () => {
-    const { ctx, clearedCookies } = createAuthContext("cross-site-token");
-    const caller = appRouter.createCaller(ctx);
-
-    await expect(caller.auth.logout()).rejects.toMatchObject({ code: "FORBIDDEN" });
-    expect(clearedCookies).toHaveLength(0);
+  it("rejects admin procedures when no active administrator is present in context", async () => {
+    const caller = appRouter.createCaller(createContext(false));
+    await expect(caller.admin.dashboard()).rejects.toMatchObject({ code: "FORBIDDEN" });
   });
 });

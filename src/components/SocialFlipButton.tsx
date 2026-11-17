@@ -2,6 +2,8 @@ import { AnimatePresence, motion, useReducedMotion } from "framer-motion";
 import { useEffect, useId, useState } from "react";
 import { Link2 } from "lucide-react";
 import { normalizeContactHref } from "@shared/contact-link";
+import type { ContactLink } from "@shared/polina-types";
+export type { ContactLink } from "@shared/polina-types";
 import {
   FaAmazon,
   FaDiscord,
@@ -14,12 +16,6 @@ import {
   FaShoppingBag,
   FaTwitter,
 } from "react-icons/fa";
-
-export type ContactLink = {
-  label: string;
-  href: string;
-  icon: "email" | "amazon" | "flipkart" | "instagram" | "facebook" | "linkedin" | "twitter" | "github" | "discord" | "phone" | "other";
-};
 
 const contactLetters = "CONTACT";
 const icons = {

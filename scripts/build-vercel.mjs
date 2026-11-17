@@ -41,7 +41,11 @@ async function copyCdnAssets(source, target, relative = "") {
   }
 }
 
-await rm(publicRoot, { recursive: true, force: true });
-await mkdir(publicRoot, { recursive: true });
-await copyCdnAssets(sourceRoot, publicRoot);
-console.log(`Prepared Vercel CDN assets from ${path.relative(process.cwd(), sourceRoot)}.`);
+if (process.env.VERCEL === "1") {
+  await rm(publicRoot, { recursive: true, force: true });
+  await mkdir(publicRoot, { recursive: true });
+  await copyCdnAssets(sourceRoot, publicRoot);
+  console.log(`Prepared Vercel CDN assets from ${path.relative(process.cwd(), sourceRoot)}.`);
+} else {
+  console.log("Skipped Vercel CDN asset staging outside the Vercel build environment.");
+}

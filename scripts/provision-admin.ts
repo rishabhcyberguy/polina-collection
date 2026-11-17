@@ -1,69 +1,99 @@
-import { createInterface } from "node:readline/promises";
-import { stdin, stdout } from "node:process";
-import { createAdminAccount, findAdminByEmail } from "../server/polina-db";
-import { hashPassword, validatePasswordRules } from "../server/_core/polina-auth";
+import { getFirebaseAdminAuth, getFirestoreDb } from "../server/firebase-services";
 
-function promptSecret(label: string) {
-  return new Promise<string>((resolve, reject) => {
-    if (!stdin.isTTY || typeof stdin.setRawMode !== "function") {
-      reject(new Error("Run this provisioning command from a private interactive terminal."));
-      return;
+type AdminDocument = {
+  id?: unknown;
+  uid?: unknown;
+  email?: unknown;
+  name?: unknown;
+  role?: unknown;
+  active?: unknown;
+  createdAt?: unknown;
+  updatedAt?: unknown;
+  lastSignedIn?: unknown;
+};
+
+function validatedInputs() {
+  if (!process.argv.includes("--confirm-owner")) {
+    throw new Error("Pass --confirm-owner only after the owner email and password have been entered through protected inputs.");
+  }
+  const email = process.env.POLINA_ADMIN_EMAIL?.trim().toLowerCase() ?? "";
+  const password = process.env.POLINA_ADMIN_PASSWORD ?? "";
+  if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email) || email.length > 320) {
+    throw new Error("The protected POLINA_ADMIN_EMAIL input is missing or invalid.");
+  }
+  if (password.length < 12 || password.length > 128) {
+    throw new Error("The protected POLINA_ADMIN_PASSWORD input must be 12–128 characters.");
+  }
+  return { email, password };
+}
+
+async function findOrCreateAuthUser(email: string, password: string) {
+  const auth = getFirebaseAdminAuth();
+  try {
+    const user = await auth.getUserByEmail(email);
+    return await auth.updateUser(user.uid, { password, disabled: false });
+  } catch (error) {
+    if ((error as { code?: string }).code !== "auth/user-not-found") throw error;
+  }
+  return auth.createUser({ email, password, emailVerified: false, disabled: false });
+}
+
+async function saveAdminRecord(uid: string, email: string, name: string | null) {
+  const db = getFirestoreDb();
+  const admins = db.collection("admins");
+  const ownerRef = admins.doc(uid);
+  const counterRef = db.collection("counters").doc("admins");
+  const now = new Date();
+
+  await db.runTransaction(async (transaction) => {
+    const [ownerSnapshot, counterSnapshot, allAdmins] = await Promise.all([
+      transaction.get(ownerRef),
+      transaction.get(counterRef),
+      transaction.get(admins.limit(500)),
+    ]);
+    if (allAdmins.size === 500 && !counterSnapshot.exists) {
+      throw new Error("The administrators counter must be initialized before provisioning an account.");
     }
 
-    stdout.write(label);
-    stdin.setRawMode(true);
-    stdin.resume();
-    let value = "";
-    const cleanup = () => {
-      stdin.off("data", onData);
-      stdin.setRawMode(false);
-      stdout.write("\n");
-    };
-    const onData = (chunk: Buffer) => {
-      for (const character of chunk.toString("utf8")) {
-        if (character === "\u0003") {
-          cleanup();
-          reject(new Error("Provisioning cancelled."));
-          return;
-        }
-        if (character === "\r" || character === "\n") {
-          cleanup();
-          resolve(value);
-          return;
-        }
-        if (character === "\u007f" || character === "\b") {
-          value = value.slice(0, -1);
-          continue;
-        }
-        if (character >= " ") value += character;
-      }
-    };
-    stdin.on("data", onData);
+    const existing = (ownerSnapshot.data() ?? {}) as AdminDocument;
+    let maximumId = 0;
+    for (const snapshot of allAdmins.docs) {
+      const data = snapshot.data() as AdminDocument;
+      const id = typeof data.id === "number" ? data.id : Number(data.id ?? snapshot.id);
+      if (Number.isFinite(id)) maximumId = Math.max(maximumId, id);
+    }
+    const nextId = typeof existing.id === "number"
+      ? existing.id
+      : Math.max(maximumId, Number(counterSnapshot.data()?.value ?? 0)) + 1;
+
+    if (!counterSnapshot.exists || nextId > Number(counterSnapshot.data()?.value ?? 0)) {
+      transaction.set(counterRef, { value: nextId, updatedAt: now });
+    }
+    transaction.set(ownerRef, {
+      id: nextId,
+      uid,
+      email,
+      name: name ?? (typeof existing.name === "string" ? existing.name : null),
+      role: "admin",
+      active: true,
+      createdAt: existing.createdAt ?? now,
+      updatedAt: now,
+      lastSignedIn: existing.lastSignedIn ?? null,
+    });
   });
 }
 
 async function main() {
-  const terminal = createInterface({ input: stdin, output: stdout });
-  const rawEmail = (await terminal.question("Administrator email: ")).trim().toLowerCase();
-  const name = (await terminal.question("Display name (optional): ")).trim();
-  terminal.close();
-  if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(rawEmail) || rawEmail.length > 320) {
-    throw new Error("Enter a valid administrator email address.");
+  const { email, password } = validatedInputs();
+  const user = await findOrCreateAuthUser(email, password);
+  await saveAdminRecord(user.uid, email, user.displayName ?? null);
+  console.log("Firebase Auth credentials and the matching POLINA administrator record were updated.");
+  if (!user.emailVerified) {
+    console.log("The account must verify its email before it can enter the admin portal.");
   }
-
-  const password = await promptSecret("Password (12–128 characters; input is hidden): ");
-  const confirmation = await promptSecret("Confirm password (input is hidden): ");
-  if (!validatePasswordRules(password)) throw new Error("Choose a password between 12 and 128 characters.");
-  if (password !== confirmation) throw new Error("The passwords did not match.");
-  if (await findAdminByEmail(rawEmail)) throw new Error("An administrator account already exists for that email.");
-
-  const passwordHash = await hashPassword(password);
-  await createAdminAccount({ email: rawEmail, name: name || null, passwordHash });
-  stdout.write("Administrator provisioned. Sign in at /admin/login. Credentials were not written to project files.\n");
 }
 
-main().catch((error) => {
-  const message = error instanceof Error ? error.message : "Administrator provisioning failed.";
-  console.error(`Provisioning failed: ${message}`);
+main().catch(() => {
+  console.error("Administrator provisioning failed. Check the protected inputs and Firebase Auth/Firestore permissions.");
   process.exitCode = 1;
 });

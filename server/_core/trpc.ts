@@ -2,7 +2,6 @@ import { NOT_ADMIN_ERR_MSG, UNAUTHED_ERR_MSG } from "../../shared/const";
 import { initTRPC, TRPCError } from "@trpc/server";
 import superjson from "superjson";
 import type { TrpcContext } from "./context";
-import { requestHasValidCsrf } from "./polina-auth";
 
 const t = initTRPC.context<TrpcContext>().create({ transformer: superjson });
 
@@ -16,12 +15,9 @@ const requireUser = t.middleware(async ({ ctx, next }) => {
 
 export const protectedProcedure = t.procedure.use(requireUser);
 
-export const adminProcedure = t.procedure.use(t.middleware(async ({ ctx, next, type }) => {
-  if (!ctx.admin || !ctx.user || ctx.user.role !== "admin" || !ctx.adminSession) {
+export const adminProcedure = t.procedure.use(t.middleware(async ({ ctx, next }) => {
+  if (!ctx.admin || !ctx.user || ctx.user.role !== "admin") {
     throw new TRPCError({ code: "FORBIDDEN", message: NOT_ADMIN_ERR_MSG });
   }
-  if (type === "mutation" && !requestHasValidCsrf(ctx.req, ctx.adminSession.csrfHash)) {
-    throw new TRPCError({ code: "FORBIDDEN", message: "Your session verification expired. Refresh and try again." });
-  }
-  return next({ ctx: { ...ctx, user: ctx.user, admin: ctx.admin, adminSession: ctx.adminSession } });
+  return next({ ctx: { ...ctx, user: ctx.user, admin: ctx.admin } });
 }));

@@ -6,6 +6,8 @@ import { registerSeoDocuments } from "./seo";
 import { serveStatic } from "./static";
 import { createContext } from "./context";
 import { registerVercelManagedMediaRedirect } from "./managed-media";
+import { checkFirebaseServices, getFirebaseAdminAuth } from "../firebase-services";
+import { isStorageConfigured } from "../storage";
 
 import helmet from "helmet";
 import rateLimit from "express-rate-limit";
@@ -21,6 +23,7 @@ app.use(
   helmet({
     contentSecurityPolicy: false,
     crossOriginEmbedderPolicy: false,
+    frameguard: false,
     crossOriginResourcePolicy: { policy: "cross-origin" },
   })
 );
@@ -64,7 +67,16 @@ if (isVercel && process.env.VERCEL_ENV !== "production") {
 if (isVercel) registerVercelManagedMediaRedirect(app);
 
 registerSeoDocuments(app);
-app.get("/api/health", (_req, res) => res.json({ status: "ok" }));
+app.get("/api/health", async (_req, res) => {
+  try {
+    await checkFirebaseServices();
+    await getFirebaseAdminAuth().listUsers(1);
+    if (isVercel && !isStorageConfigured()) throw new Error("Media storage is not configured.");
+    return res.json({ status: "ok" });
+  } catch {
+    return res.status(503).json({ status: "unavailable" });
+  }
+});
 app.get("/api/platform/config.js", (_req, res) => {
   res.set("Cache-Control", "no-store").type("application/javascript").send(publicPlatformScript());
 });
@@ -78,7 +90,7 @@ app.use(
 );
 app.use("/api", (_req, res) => res.status(404).json({ error: "Not found" }));
 
-if (process.env.NODE_ENV !== "development" || isVercel) {
+if (process.env.NODE_ENV === "production" || isVercel) {
   serveStatic(app);
 }
 

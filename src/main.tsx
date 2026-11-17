@@ -1,4 +1,5 @@
 import { trpc } from "@/lib/trpc";
+import { auth as firebaseAuth } from "@/lib/firebase";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { httpBatchLink, httpLink, splitLink } from "@trpc/client";
 import { createRoot } from "react-dom/client";
@@ -31,20 +32,9 @@ const queryClient = new QueryClient({
   },
 });
 
-function getAuthHeaders() {
-  const headers: Record<string, string> = {};
-  const cookie = typeof document !== "undefined" ? document.cookie.split(";").map((part) => part.trim()).find((part) => part.startsWith("polina_csrf=")) : null;
-  const cookieCsrf = cookie ? decodeURIComponent(cookie.slice("polina_csrf=".length)) : "";
-  let localCsrf = "";
-  let localToken = "";
-  try {
-    localCsrf = localStorage.getItem("polina_csrf_token") || "";
-    localToken = localStorage.getItem("polina_admin_token") || "";
-  } catch {}
-  const csrf = cookieCsrf || localCsrf;
-  if (csrf) headers["x-polina-csrf"] = csrf;
-  if (localToken) headers["authorization"] = `Bearer ${localToken}`;
-  return headers;
+async function getAuthHeaders() {
+  const token = await firebaseAuth.currentUser?.getIdToken();
+  return token ? { authorization: `Bearer ${token}` } : {};
 }
 
 const trpcClient = trpc.createClient({
@@ -60,9 +50,6 @@ const trpcClient = trpc.createClient({
       url: "/api/trpc",
       transformer: superjson,
       headers: getAuthHeaders,
-      fetch(input, init) {
-        return globalThis.fetch(input, { ...(init ?? {}), credentials: "include" });
-      },
     }),
   })],
 });

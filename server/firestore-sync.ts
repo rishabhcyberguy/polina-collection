@@ -70,8 +70,8 @@ export interface FirestoreSiteContentDoc {
 }
 
 /**
- * Seed initial catalog, categories, site content, and admin record to Firestore
- * if the database is currently empty.
+ * Seed sample catalog, categories, and site content to Firestore if the
+ * database is currently empty. This never provisions an administrator.
  */
 export async function seedFirestoreIfEmpty() {
   if (!firestoreDb) return;
@@ -134,14 +134,6 @@ export async function seedFirestoreIfEmpty() {
         updatedAt: new Date().toISOString(),
       };
       await setDoc(doc(firestoreDb, "site_content", "home"), initialContent);
-
-      // 4. Admin Profile Document
-      await setDoc(doc(firestoreDb, "admins", "admin-rishabh"), {
-        email: "rishabhkp162012@gmail.com",
-        role: "admin",
-        active: true,
-        createdAt: new Date().toISOString(),
-      });
 
       console.log("[FIREBASE] Seeded Firestore successfully.");
     }

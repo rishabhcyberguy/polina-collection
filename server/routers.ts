@@ -5,14 +5,11 @@ import {
   archiveCategory,
   archiveProduct,
   addProductImage,
-  ensureDefaultAdmin,
-  findPasswordResetToken,
   getAdminProduct,
   getAdminSitePage,
   getDashboardData,
   getPublishedPage,
   getPublishedProduct,
-  hitAuthRateLimit,
   listActiveCategories,
   listAdminCategories,
   listAdminProducts,
@@ -24,12 +21,11 @@ import {
   saveProductDraft,
   saveSitePage,
   updateProductImageAlt,
-  consumePasswordReset,
+  updateAdminLastSignedIn,
 } from "./polina-db";
-import { hashPassword, requestPasswordReset, sha256, signInWithFirebase, signInWithPassword, signOut, validatePasswordRules } from "./_core/polina-auth";
 import { adminProcedure, publicProcedure, router } from "./_core/trpc";
 import { systemRouter } from "./_core/systemRouter";
-import type { SiteContent } from "../drizzle/schema";
+import type { SiteContent } from "../shared/polina-types";
 import { normalizeContactHref } from "../shared/contact-link";
 import { normalizeRetailerUrl } from "../shared/retailer";
 import { normalizeInternalPath } from "../shared/internal-path";
@@ -85,37 +81,14 @@ export const appRouter = router({
   system: systemRouter,
   auth: router({
     me: publicProcedure.query(({ ctx }) => ctx.admin ? ({ id: ctx.admin.id, name: ctx.admin.name, email: ctx.admin.email, role: "admin" as const }) : null),
-    signIn: publicProcedure.input(z.object({ email: z.string().trim().email().max(320), password: z.string().min(1).max(128) })).mutation(async ({ input, ctx }) => {
+    firebaseSignIn: adminProcedure.mutation(async ({ ctx }) => {
       try {
-        return await signInWithPassword(input, ctx.req, ctx.res);
-      } catch (error) {
-        if ((error as { code?: string }).code === "TOO_MANY_REQUESTS") {
-          throw new TRPCError({ code: "TOO_MANY_REQUESTS", message: "Too many sign-in attempts. Try again later." });
-        }
-        throw new TRPCError({ code: "UNAUTHORIZED", message: "Email or password was not accepted." });
+        await updateAdminLastSignedIn(ctx.admin.uid);
+        return { id: ctx.admin.id, name: ctx.admin.name, email: ctx.admin.email, role: "admin" as const };
+      } catch {
+        throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "Administrator sign-in could not be completed." });
       }
     }),
-    firebaseSignIn: publicProcedure.input(z.object({ email: z.string().trim().email().max(320) })).mutation(async ({ input, ctx }) => {
-      try {
-        return await signInWithFirebase(input, ctx.req, ctx.res);
-      } catch (error) {
-        if ((error as { code?: string }).code === "FORBIDDEN") {
-          throw new TRPCError({ code: "FORBIDDEN", message: "This Google / Firebase account is not authorized for POLINA administration." });
-        }
-        throw new TRPCError({ code: "UNAUTHORIZED", message: "Sign-in failed. Please verify credentials." });
-      }
-    }),
-    requestPasswordReset: publicProcedure.input(z.object({ email: z.string().trim().email().max(320) })).mutation(({ input, ctx }) => requestPasswordReset(input.email, ctx.req)),
-    resetPassword: publicProcedure.input(z.object({ token: z.string().min(32).max(256), password: z.string().min(12).max(128) })).mutation(async ({ input }) => {
-      const tokenHash = sha256(input.token);
-      const resetToken = await findPasswordResetToken(tokenHash);
-      if (!resetToken || !validatePasswordRules(input.password)) {
-        throw new TRPCError({ code: "BAD_REQUEST", message: "This reset link is invalid or expired, or the password does not meet the requirements." });
-      }
-      await consumePasswordReset({ tokenHash, adminId: resetToken.adminId, passwordHash: await hashPassword(input.password) });
-      return { success: true as const };
-    }),
-    logout: adminProcedure.mutation(({ ctx }) => signOut(ctx.req, ctx.res)),
   }),
   catalog: router({
     home: publicProcedure.query(() => getPublishedPage("home")),
@@ -124,22 +97,10 @@ export const appRouter = router({
     product: publicProcedure.input(z.object({ slug: z.string().trim().min(1).max(180) })).query(({ input }) => getPublishedProduct(input.slug)),
   }),
   admin: router({
-    dashboard: adminProcedure.query(async () => {
-      await ensureDefaultAdmin();
-      return getDashboardData();
-    }),
-    products: adminProcedure.query(async () => {
-      await ensureDefaultAdmin();
-      return listAdminProducts();
-    }),
-    product: adminProcedure.input(z.object({ id: idSchema })).query(async ({ input }) => {
-      await ensureDefaultAdmin();
-      return getAdminProduct(input.id);
-    }),
-    categories: adminProcedure.query(async () => {
-      await ensureDefaultAdmin();
-      return listAdminCategories();
-    }),
+    dashboard: adminProcedure.query(() => getDashboardData()),
+    products: adminProcedure.query(() => listAdminProducts()),
+    product: adminProcedure.input(z.object({ id: idSchema })).query(({ input }) => getAdminProduct(input.id)),
+    categories: adminProcedure.query(() => listAdminCategories()),
     saveCategory: adminProcedure.input(z.object({ id: idSchema.optional(), name: z.string().trim().min(1).max(120), slug: slugSchema.max(160), sortOrder: z.number().int().min(0).max(10000) })).mutation(async ({ input }) => {
       if (input.id) {
         const category = (await listAdminCategories()).find((item) => item.id === input.id);
@@ -212,10 +173,7 @@ export const appRouter = router({
       await removeProductImage(input.productId, input.imageId);
       return { success: true as const };
     }),
-    sitePage: adminProcedure.input(z.object({ pageKey: z.literal("home") })).query(async ({ input }) => {
-      await ensureDefaultAdmin();
-      return getAdminSitePage(input.pageKey);
-    }),
+    sitePage: adminProcedure.input(z.object({ pageKey: z.literal("home") })).query(({ input }) => getAdminSitePage(input.pageKey)),
     saveSitePage: adminProcedure.input(z.object({ pageKey: z.literal("home"), content: contentSchema })).mutation(async ({ input, ctx }) => {
       validateSiteContent(input.content);
       await saveSitePage({ ...input, editor: ctx.admin! });

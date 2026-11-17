@@ -1,5 +1,5 @@
 import type { Express, NextFunction, Request, RequestHandler, Response } from "express";
-import type { SiteContent } from "../../drizzle/schema";
+import type { SiteContent } from "../../shared/polina-types";
 import { getPublishedPage, getPublishedProduct, listActiveCategories, listPublishedProducts } from "../polina-db";
 import { normalizeSeoDescription, normalizeSeoTitle } from "../../shared/seo";
 import { normalizeContactHref } from "../../shared/contact-link";
