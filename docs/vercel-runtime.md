@@ -22,7 +22,7 @@ The app's `/api/health` checks the configured Firestore and Firebase Auth servic
 
 ## Deployment status
 
-The Manus Preview runs on port 3000. TypeScript and 33 existing tests passed on 2026-11-17. A production Vercel project, production Firebase credentials, an approved Vercel media backend, and owner Firebase Auth credentials are not yet configured. No production deployment or live Firestore rules deployment has been performed. Do not describe the project as live until a production deployment and smoke tests succeed.
+The Manus Preview runs on port 3000. TypeScript and 33 existing tests passed on 2026-11-17. The owner Firebase Auth credentials were provisioned through protected Development inputs, and the temporary provisioning secrets were removed. Vercel project creation returned 403; production Firebase credentials and an approved Vercel media backend are not configured. No production deployment or live Firestore rules deployment has been performed. Do not describe the project as live until a production deployment and smoke tests succeed.
 
 ## Official sources
 
