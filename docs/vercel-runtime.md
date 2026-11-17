@@ -2,7 +2,7 @@
 
 ## Verified platform behavior
 
-Vercel's Express guide supports a default-exported Express application from a root `index.ts` entry. The Express application becomes one Vercel Function. Vercel serves static assets from the deployment's root `public/` directory through its CDN; `express.static()` does not serve those assets there. A function can include additional files using `includeFiles` in `vercel.json`.
+Vercel's Express guide supports a default-exported Express application from a root `index.ts` entry. The Express application becomes one Vercel Function. Vercel serves static assets from the deployment's root `public/` directory through its CDN; `express.static()` does not serve those assets there. In `vercel.json`, `functions` patterns must match supported function source paths such as `api/*.ts`; do not target the root Express `index.ts` with that property. Use `includeFiles` only on a matching function pattern.
 
 Vercel Functions currently impose a 4.5 MB maximum request-body and response-body size. A 3 MiB image becomes about 4 MiB when encoded as base64, leaving room for the surrounding JSON and tRPC envelope. POLINA therefore enforces a 3 MiB image limit and uses an Express parser ceiling of 4.3 MB for the Vercel runtime. The regular local/Manus listener remains a separate entrypoint.
 

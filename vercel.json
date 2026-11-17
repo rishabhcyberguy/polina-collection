@@ -1,11 +1,6 @@
 {
   "$schema": "https://openapi.vercel.sh/vercel.json",
   "buildCommand": "pnpm build:vercel",
-  "functions": {
-    "index.ts": {
-      "includeFiles": "dist/public/index.html"
-    }
-  },
   "headers": [
     {
       "source": "/manus-routes.json",
