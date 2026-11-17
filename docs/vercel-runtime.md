@@ -29,6 +29,6 @@ The Manus Preview runs on port 3000. TypeScript and 33 existing tests passed on 
 - [Express on Vercel](https://vercel.com/docs/frameworks/backend/express) — Express exports, single-function behavior, static assets, and `express.static()` limitation. Consulted 2026-10-22.
 - [Vercel Functions limits](https://vercel.com/docs/functions/limitations) — request/response payload ceiling, memory/duration, regions, and function bundle limits. Consulted 2026-10-22.
 - [Advanced Function configuration](https://vercel.com/docs/functions/configuring-functions/advanced-configuration) — `vercel.json` function configuration and bundling. Consulted 2026-10-22.
-- [Vercel project configuration](https://vercel.com/docs/project-configuration/vercel-json#functions) — `functions.includeFiles` configuration for files bundled with the Express Function. Consulted 2026-11-13.
+- [Vercel project configuration](https://vercel.com/docs/project-configuration/vercel-json#functions) — function glob matching and `includeFiles`; patterns must match a supported function source path and cannot target the root Express entrypoint. Consulted 2026-11-17.
 - [Firebase ID token verification](https://firebase.google.com/docs/auth/admin/verify-id-tokens) — verify client-issued Firebase ID tokens on a custom backend instead of trusting a browser-supplied email. Consulted 2026-11-13.
 - [Firebase Admin setup](https://firebase.google.com/docs/admin/setup) — initialize trusted server SDKs with service-account credentials kept private. Consulted 2026-11-14.
