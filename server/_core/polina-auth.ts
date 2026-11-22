@@ -1,7 +1,7 @@
 import type { Request } from "express";
-import type { User } from "../../shared/polina-types";
-import { findAdminByUid } from "../polina-db";
-import { getFirebaseAdminAuth } from "../firebase-services";
+import type { User } from "../../shared/polina-types.js";
+import { findAdminByUid } from "../polina-db.js";
+import { getFirebaseAdminAuth } from "../firebase-services.js";
 
 export type AuthenticatedAdmin = {
   admin: NonNullable<Awaited<ReturnType<typeof findAdminByUid>>>;

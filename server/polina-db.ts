@@ -9,8 +9,8 @@ import type {
   PublishedProductSnapshot,
   SiteContent,
   SitePage,
-} from "../shared/polina-types";
-import { getFirestoreDb } from "./firebase-services";
+} from "../shared/polina-types.js";
+import { getFirestoreDb } from "./firebase-services.js";
 
 const CATEGORIES = "categories";
 const PRODUCTS = "products";

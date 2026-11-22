@@ -1,6 +1,6 @@
 import type { CreateExpressContextOptions } from "@trpc/server/adapters/express";
-import type { User, AdminAccount } from "../../shared/polina-types";
-import { authenticateAdminRequest } from "./polina-auth";
+import type { User, AdminAccount } from "../../shared/polina-types.js";
+import { authenticateAdminRequest } from "./polina-auth.js";
 
 export type TrpcContext = {
   req: CreateExpressContextOptions["req"];

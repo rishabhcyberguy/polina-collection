@@ -7,7 +7,7 @@ function expressPlugin(): Plugin {
   return {
     name: 'express-trpc-backend',
     async configureServer(server) {
-      const { default: app } = await import('./server/_core/app');
+      const { default: app } = await import('./server/_core/app.js');
       server.middlewares.use((req, res, next) => {
         if (req.url && req.url.startsWith('/api')) {
           return (app as any)(req, res, next);

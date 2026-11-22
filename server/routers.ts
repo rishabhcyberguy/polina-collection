@@ -1,6 +1,6 @@
 import { TRPCError } from "@trpc/server";
 import { z } from "zod";
-import { storagePut } from "./storage";
+import { storagePut } from "./storage.js";
 import {
   archiveCategory,
   archiveProduct,
@@ -22,13 +22,13 @@ import {
   saveSitePage,
   updateProductImageAlt,
   updateAdminLastSignedIn,
-} from "./polina-db";
-import { adminProcedure, publicProcedure, router } from "./_core/trpc";
-import { systemRouter } from "./_core/systemRouter";
-import type { SiteContent } from "../shared/polina-types";
-import { normalizeContactHref } from "../shared/contact-link";
-import { normalizeRetailerUrl } from "../shared/retailer";
-import { normalizeInternalPath } from "../shared/internal-path";
+} from "./polina-db.js";
+import { adminProcedure, publicProcedure, router } from "./_core/trpc.js";
+import { systemRouter } from "./_core/systemRouter.js";
+import type { SiteContent } from "../shared/polina-types.js";
+import { normalizeContactHref } from "../shared/contact-link.js";
+import { normalizeRetailerUrl } from "../shared/retailer.js";
+import { normalizeInternalPath } from "../shared/internal-path.js";
 
 const slugSchema = z.string().trim().min(1).max(180).regex(/^[a-z0-9]+(?:-[a-z0-9]+)*$/, "Use lowercase letters, numbers, and hyphens.");
 const idSchema = z.number().int().positive();
@@ -142,7 +142,7 @@ export const appRouter = router({
       return { success: true as const };
     }),
     unpublishProduct: adminProcedure.input(z.object({ id: idSchema })).mutation(async ({ input, ctx }) => {
-      await (await import("./polina-db")).unpublishProduct(input.id, ctx.admin!);
+      await (await import("./polina-db.js")).unpublishProduct(input.id, ctx.admin!);
       return { success: true as const };
     }),
     archiveProduct: adminProcedure.input(z.object({ id: idSchema })).mutation(async ({ input, ctx }) => {

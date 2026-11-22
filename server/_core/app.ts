@@ -1,12 +1,12 @@
 import express, { type ErrorRequestHandler } from "express";
 import { createExpressMiddleware } from "@trpc/server/adapters/express";
-import { appRouter } from "../routers";
-import { publicPlatformScript } from "./publicConfig";
-import { registerSeoDocuments } from "./seo";
-import { serveStatic } from "./static";
-import { createContext } from "./context";
-import { registerVercelManagedMediaRedirect } from "./managed-media";
-import { checkFirebaseServices, checkFirebaseStorage, getFirebaseAdminAuth } from "../firebase-services";
+import { appRouter } from "../routers.js";
+import { publicPlatformScript } from "./publicConfig.js";
+import { registerSeoDocuments } from "./seo.js";
+import { serveStatic } from "./static.js";
+import { createContext } from "./context.js";
+import { registerVercelManagedMediaRedirect } from "./managed-media.js";
+import { checkFirebaseServices, checkFirebaseStorage, getFirebaseAdminAuth } from "../firebase-services.js";
 
 import helmet from "helmet";
 import rateLimit from "express-rate-limit";

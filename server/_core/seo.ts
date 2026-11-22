@@ -1,10 +1,10 @@
 import type { Express, NextFunction, Request, RequestHandler, Response } from "express";
-import type { SiteContent } from "../../shared/polina-types";
-import { getPublishedPage, getPublishedProduct, listActiveCategories, listPublishedProducts } from "../polina-db";
-import { normalizeSeoDescription, normalizeSeoTitle } from "../../shared/seo";
-import { normalizeContactHref } from "../../shared/contact-link";
-import { normalizeRetailerUrl } from "../../shared/retailer";
-import { safeInternalPath as normalizeInternalTarget } from "../../shared/internal-path";
+import type { SiteContent } from "../../shared/polina-types.js";
+import { getPublishedPage, getPublishedProduct, listActiveCategories, listPublishedProducts } from "../polina-db.js";
+import { normalizeSeoDescription, normalizeSeoTitle } from "../../shared/seo.js";
+import { normalizeContactHref } from "../../shared/contact-link.js";
+import { normalizeRetailerUrl } from "../../shared/retailer.js";
+import { safeInternalPath as normalizeInternalTarget } from "../../shared/internal-path.js";
 
 type PublicSeoPage = {
   title: string;

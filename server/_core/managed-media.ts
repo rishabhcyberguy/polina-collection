@@ -1,5 +1,5 @@
 import type { Express } from "express";
-import { storageGetSignedUrl } from "../storage";
+import { storageGetSignedUrl } from "../storage.js";
 
 const PRODUCT_MEDIA_KEY = /^polina\/products\/[1-9]\d*\/[A-Za-z0-9_-]+\.(?:jpg|png|webp)$/i;
 

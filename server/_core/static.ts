@@ -1,7 +1,7 @@
 import express, { type Express } from "express";
 import fs from "node:fs";
 import path from "node:path";
-import { createPublicSeoMiddleware } from "./seo";
+import { createPublicSeoMiddleware } from "./seo.js";
 
 export function shouldServeSpaShell(method: string, originalUrl: string) {
   if (method !== "GET" && method !== "HEAD") return false;

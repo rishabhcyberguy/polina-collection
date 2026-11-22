@@ -2,8 +2,8 @@
 // Manus-managed storage adapter so existing preview behavior and media paths remain intact.
 
 import { randomUUID } from "node:crypto";
-import { ENV } from "./_core/env";
-import { getFirebaseStorageBucket } from "./firebase-services";
+import { ENV } from "./_core/env.js";
+import { getFirebaseStorageBucket } from "./firebase-services.js";
 
 const SIGNED_READ_TTL_MS = 15 * 60 * 1000;
 
