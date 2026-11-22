@@ -1,6 +1,7 @@
 import { Firestore } from "@google-cloud/firestore";
 import { cert, getApps, initializeApp, type App, type ServiceAccount } from "firebase-admin/app";
 import { getAuth, type Auth } from "firebase-admin/auth";
+import { getStorage } from "firebase-admin/storage";
 import firebaseConfig from "../firebase-applet-config.json" with { type: "json" };
 
 type DownloadedServiceAccount = {
@@ -100,6 +101,20 @@ export function getFirestoreDb(): Firestore {
     },
   });
   return firestoreClient;
+}
+
+export function getFirebaseStorageBucket() {
+  const bucketName = process.env.FIREBASE_STORAGE_BUCKET?.trim() || firebaseConfig.storageBucket?.trim();
+  if (!bucketName) {
+    throw new Error("FIREBASE_STORAGE_BUCKET or firebase-applet-config.json storageBucket is required.");
+  }
+  return getStorage(getAdminApp()).bucket(bucketName);
+}
+
+export async function checkFirebaseStorage() {
+  const bucket = getFirebaseStorageBucket();
+  await bucket.getMetadata();
+  return { bucket: bucket.name };
 }
 
 export async function checkFirebaseServices() {

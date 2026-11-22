@@ -6,8 +6,7 @@ import { registerSeoDocuments } from "./seo";
 import { serveStatic } from "./static";
 import { createContext } from "./context";
 import { registerVercelManagedMediaRedirect } from "./managed-media";
-import { checkFirebaseServices, getFirebaseAdminAuth } from "../firebase-services";
-import { isStorageConfigured } from "../storage";
+import { checkFirebaseServices, checkFirebaseStorage, getFirebaseAdminAuth } from "../firebase-services";
 
 import helmet from "helmet";
 import rateLimit from "express-rate-limit";
@@ -62,8 +61,7 @@ if (isVercel && process.env.VERCEL_ENV !== "production") {
   });
 }
 
-// Manus owns this stable route in its own Preview/published gateway. Vercel needs an
-// application route because its CDN does not implement Manus's /manus-storage namespace.
+// Manus owns this route in Preview. Vercel redirects Firebase-backed media through the app.
 if (isVercel) registerVercelManagedMediaRedirect(app);
 
 registerSeoDocuments(app);
@@ -71,7 +69,7 @@ app.get("/api/health", async (_req, res) => {
   try {
     await checkFirebaseServices();
     await getFirebaseAdminAuth().listUsers(1);
-    if (isVercel && !isStorageConfigured()) throw new Error("Media storage is not configured.");
+    if (isVercel) await checkFirebaseStorage();
     return res.json({ status: "ok" });
   } catch {
     return res.status(503).json({ status: "unavailable" });

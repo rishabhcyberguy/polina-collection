@@ -9,6 +9,7 @@ Polina is a luxury, expressive nightwear and contemporary clothing brand applica
 - **Admin Dashboard**: Manage products, images, retailer links, and page content.
 - **Responsive & Motion-Driven UI**: Built with React, Tailwind CSS, and Framer Motion.
 - **Firebase Auth and Firestore**: Firebase Authentication protects the admin portal; the server stores catalog and page data in the configured named Firestore database.
+- **Firebase Storage on Vercel**: Production product uploads use the configured Firebase Storage bucket; Manus Preview retains its managed media path.
 
 ## Development
 
@@ -21,4 +22,4 @@ The server requires a protected `FIREBASE_SERVICE_ACCOUNT_JSON` value. Project a
 
 ## Deployment status
 
-The Manus Preview has been configured. Production Vercel deployment is not complete: the Vercel project/runtime secrets and an owner-approved durable image-storage backend must be configured and validated first. The app does not seed demo catalog data; add genuine content through the protected admin portal after the owner account is provisioned.
+The Vercel deployment configuration and Firebase Storage adapter are checked in, but production is not live. The owner must import the GitHub repository into Vercel, set the protected Firebase service-account variable, verify the Firebase project's required Blaze plan, enable/create the configured Firebase Storage bucket, confirm its IAM permissions, and run the health/auth/upload smoke tests. Existing Manus-hosted product images are not automatically copied; migrate or re-upload them to Firebase Storage if the Firestore catalog already references them. The app does not seed demo catalog data; add genuine content through the protected admin portal after the owner account is provisioned. See [Vercel runtime notes](docs/vercel-runtime.md).
